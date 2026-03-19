@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, FileText, Pencil } from 'lucide-react'
@@ -171,11 +172,14 @@ export default async function ShipmentDetailPage({ params }: ShipmentDetailPageP
                 {deliveryProof.photo_url && (
                   <div>
                     <p className="text-sm font-medium text-muted-foreground mb-2">Photo</p>
-                    <img
-                      src={deliveryProof.photo_url}
-                      alt="Delivery proof"
-                      className="rounded-md border max-h-64 object-contain"
-                    />
+                    <div className="relative rounded-md border overflow-hidden max-h-64 w-full h-64">
+                      <Image
+                        src={deliveryProof.photo_url}
+                        alt="Delivery proof"
+                        fill
+                        className="object-contain"
+                      />
+                    </div>
                   </div>
                 )}
               </CardContent>

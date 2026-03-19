@@ -67,7 +67,7 @@ export function RevenueChart() {
       y: {
         beginAtZero: true,
         ticks: {
-          callback: function(value) {
+          callback: function(value: string | number) {
             return `R${Number(value).toLocaleString()}`
           },
         },
