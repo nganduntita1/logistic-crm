@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import { ensureProfile } from '@/app/actions/auth'
 import { createClient } from '@/lib/supabase/client'
 import type { UserRole } from '@/lib/types/database'
 import {
@@ -15,6 +14,23 @@ import {
 
 type AuthFormProps = {
   mode: 'sign-in' | 'sign-up'
+}
+
+async function ensureProfile(fullName?: string, role?: UserRole) {
+  const response = await fetch('/api/auth/ensure-profile', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ fullName, role }),
+  })
+
+  const result = (await response.json().catch(() => ({ error: 'Profile setup failed.' }))) as {
+    error?: string
+    success?: boolean
+  }
+
+  return result
 }
 
 export function AuthForm({ mode }: AuthFormProps) {

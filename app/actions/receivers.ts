@@ -1,6 +1,6 @@
 'use server'
 
-import { createServerClient } from '@/lib/supabase/server'
+import { requireOrganizationContext } from '@/lib/organizations'
 import { receiverSchema } from '@/lib/validations/receiver'
 import { revalidatePath } from 'next/cache'
 
@@ -9,8 +9,9 @@ import { revalidatePath } from 'next/cache'
  * Validates: Requirements 18.1, 18.4
  */
 export async function createReceiver(formData: FormData) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const validated = receiverSchema.parse({
       name: formData.get('name'),
@@ -22,7 +23,7 @@ export async function createReceiver(formData: FormData) {
 
     const { data, error } = await supabase
       .from('receivers')
-      .insert(validated)
+      .insert({ ...validated, org_id: organizationId })
       .select()
       .single()
 
@@ -45,12 +46,14 @@ export async function createReceiver(formData: FormData) {
  * Validates: Requirements 18.2
  */
 export async function getReceivers() {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('receivers')
       .select('*')
+      .eq('org_id', organizationId)
       .order('name', { ascending: true })
 
     if (error) {

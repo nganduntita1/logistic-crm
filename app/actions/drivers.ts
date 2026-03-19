@@ -1,6 +1,6 @@
 'use server'
 
-import { createServerClient } from '@/lib/supabase/server'
+import { requireOrganizationContext } from '@/lib/organizations'
 import { driverSchema } from '@/lib/validations/driver'
 import { revalidatePath } from 'next/cache'
 
@@ -9,8 +9,9 @@ import { revalidatePath } from 'next/cache'
  * Validates: Requirements 6.1, 6.6
  */
 export async function createDriver(formData: FormData) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const vehicleId = formData.get('vehicle_id') as string
     const validated = driverSchema.parse({
@@ -24,6 +25,7 @@ export async function createDriver(formData: FormData) {
     const { data: existingLicense } = await supabase
       .from('drivers')
       .select('id')
+      .eq('org_id', organizationId)
       .eq('license_number', validated.license_number)
       .maybeSingle()
 
@@ -35,6 +37,7 @@ export async function createDriver(formData: FormData) {
     const { data: existingPassport } = await supabase
       .from('drivers')
       .select('id')
+      .eq('org_id', organizationId)
       .eq('passport_number', validated.passport_number)
       .maybeSingle()
 
@@ -43,6 +46,7 @@ export async function createDriver(formData: FormData) {
     }
 
     const insertData: Record<string, unknown> = {
+      org_id: organizationId,
       user_id: validated.user_id,
       license_number: validated.license_number,
       passport_number: validated.passport_number,
@@ -76,8 +80,9 @@ export async function createDriver(formData: FormData) {
  * Validates: Requirements 6.1, 6.6
  */
 export async function updateDriver(driverId: string, formData: FormData) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const vehicleId = formData.get('vehicle_id') as string
     const validated = driverSchema.parse({
@@ -91,6 +96,7 @@ export async function updateDriver(driverId: string, formData: FormData) {
     const { data: existingLicense } = await supabase
       .from('drivers')
       .select('id')
+      .eq('org_id', organizationId)
       .eq('license_number', validated.license_number)
       .neq('id', driverId)
       .maybeSingle()
@@ -103,6 +109,7 @@ export async function updateDriver(driverId: string, formData: FormData) {
     const { data: existingPassport } = await supabase
       .from('drivers')
       .select('id')
+      .eq('org_id', organizationId)
       .eq('passport_number', validated.passport_number)
       .neq('id', driverId)
       .maybeSingle()
@@ -123,6 +130,7 @@ export async function updateDriver(driverId: string, formData: FormData) {
       .from('drivers')
       .update(updateData)
       .eq('id', driverId)
+      .eq('org_id', organizationId)
       .select('*, profile:profiles(*), vehicle:vehicles(*)')
       .single()
 
@@ -146,12 +154,14 @@ export async function updateDriver(driverId: string, formData: FormData) {
  * Validates: Requirements 6.5
  */
 export async function getDrivers() {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('drivers')
       .select('*, profile:profiles(*), vehicle:vehicles(*)')
+      .eq('org_id', organizationId)
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -172,13 +182,15 @@ export async function getDrivers() {
  * Validates: Requirements 6.5
  */
 export async function getDriver(driverId: string) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('drivers')
       .select('*, profile:profiles(*), vehicle:vehicles(*)')
       .eq('id', driverId)
+      .eq('org_id', organizationId)
       .single()
 
     if (error) {
@@ -190,6 +202,7 @@ export async function getDriver(driverId: string) {
       .from('trips')
       .select('id, route, departure_date, expected_arrival, status')
       .eq('driver_id', driverId)
+      .eq('org_id', organizationId)
       .order('departure_date', { ascending: false })
 
     return { data, trips: trips ?? [] }
@@ -206,13 +219,15 @@ export async function getDriver(driverId: string) {
  * Validates: Requirements 6.3
  */
 export async function assignVehicleToDriver(driverId: string, vehicleId: string | null) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('drivers')
       .update({ vehicle_id: vehicleId, updated_at: new Date().toISOString() })
       .eq('id', driverId)
+      .eq('org_id', organizationId)
       .select('*, profile:profiles(*), vehicle:vehicles(*)')
       .single()
 
@@ -235,8 +250,9 @@ export async function assignVehicleToDriver(driverId: string, vehicleId: string 
  * Get all profiles with driver role (for driver creation form)
  */
 export async function getDriverProfiles() {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('profiles')

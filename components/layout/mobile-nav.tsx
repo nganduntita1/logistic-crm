@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { Menu, X, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { signOut } from "@/app/actions/auth"
+import { AddEmployeeDialog } from "@/components/layout/add-employee-dialog"
 import {
   Sheet,
   SheetContent,
@@ -20,6 +21,7 @@ import {
   Package,
   Truck,
   UserCircle,
+  UserPlus,
   Car,
   Map,
 } from "lucide-react"
@@ -66,6 +68,12 @@ const navigationItems: NavItem[] = [
     href: "/drivers",
     label: "Drivers",
     icon: UserCircle,
+    roles: ["admin"],
+  },
+  {
+    href: "/employees",
+    label: "Employees",
+    icon: UserPlus,
     roles: ["admin"],
   },
   {
@@ -137,6 +145,14 @@ export function MobileNav({ userRole }: MobileNavProps) {
             })}
           </nav>
           <div className="absolute bottom-4 left-4 right-4">
+            {userRole === "admin" && (
+              <div className="mb-2">
+                <AddEmployeeDialog
+                  triggerClassName="w-full justify-start text-gray-300 hover:bg-gray-800 hover:text-white"
+                  onSuccess={() => setOpen(false)}
+                />
+              </div>
+            )}
             <form action={signOut}>
               <Button
                 type="submit"

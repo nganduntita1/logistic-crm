@@ -9,10 +9,12 @@ import {
   Package,
   Truck,
   UserCircle,
+  UserPlus,
   Car,
   Map,
   LogOut,
 } from "lucide-react"
+import { AddEmployeeDialog } from "@/components/layout/add-employee-dialog"
 import { Button } from "@/components/ui/button"
 import { signOut } from "@/app/actions/auth"
 
@@ -58,6 +60,12 @@ const navigationItems: NavItem[] = [
     href: "/drivers",
     label: "Drivers",
     icon: UserCircle,
+    roles: ["admin"],
+  },
+  {
+    href: "/employees",
+    label: "Employees",
+    icon: UserPlus,
     roles: ["admin"],
   },
   {
@@ -114,6 +122,11 @@ export function Sidebar({ userRole }: SidebarProps) {
         })}
       </nav>
       <div className="p-4 border-t border-gray-800">
+        {userRole === "admin" && (
+          <div className="mb-2">
+            <AddEmployeeDialog triggerClassName="w-full justify-start text-gray-300 hover:bg-gray-800 hover:text-white" />
+          </div>
+        )}
         <form action={signOut}>
           <Button
             type="submit"

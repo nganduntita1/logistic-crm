@@ -1,6 +1,6 @@
 'use server'
 
-import { createServerClient } from '@/lib/supabase/server'
+import { requireOrganizationContext } from '@/lib/organizations'
 import { shipmentSchema } from '@/lib/validations/shipment'
 import { revalidatePath } from 'next/cache'
 import type { ShipmentStatus, PaymentStatus } from '@/lib/types/database'
@@ -21,8 +21,9 @@ function generateTrackingNumber(): string {
  * Validates: Requirements 4.1, 4.2, 4.3, 4.7
  */
 export async function createShipment(formData: FormData) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId, user } = await requireOrganizationContext()
 
     const tripId = formData.get('trip_id') as string
     const validated = shipmentSchema.parse({
@@ -53,6 +54,7 @@ export async function createShipment(formData: FormData) {
 
     const insertData: Record<string, unknown> = {
       ...validated,
+      org_id: organizationId,
       tracking_number,
       trip_id: validated.trip_id || null,
     }
@@ -68,15 +70,13 @@ export async function createShipment(formData: FormData) {
     }
 
     // Record initial status in history
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      await supabase.from('shipment_status_history').insert({
-        shipment_id: data.id,
-        status: 'pending',
-        changed_by: user.id,
-        notes: 'Shipment created',
-      })
-    }
+    await supabase.from('shipment_status_history').insert({
+      org_id: organizationId,
+      shipment_id: data.id,
+      status: 'pending',
+      changed_by: user.id,
+      notes: 'Shipment created',
+    })
 
     revalidatePath('/shipments')
     return { data }
@@ -93,8 +93,9 @@ export async function createShipment(formData: FormData) {
  * Validates: Requirements 4.2, 4.3, 4.4
  */
 export async function updateShipment(shipmentId: string, formData: FormData) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const tripId = formData.get('trip_id') as string
     const validated = shipmentSchema.parse({
@@ -117,6 +118,7 @@ export async function updateShipment(shipmentId: string, formData: FormData) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', shipmentId)
+      .eq('org_id', organizationId)
       .select('*, client:clients(*), receiver:receivers(*), trip:trips(*)')
       .single()
 
@@ -144,18 +146,15 @@ export async function updateShipmentStatus(
   status: ShipmentStatus,
   notes?: string
 ) {
-  try {
-    const supabase = await createServerClient()
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return { error: 'Not authenticated' }
-    }
+  try {
+    const { supabase, organizationId, user } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('shipments')
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', shipmentId)
+      .eq('org_id', organizationId)
       .select()
       .single()
 
@@ -165,6 +164,7 @@ export async function updateShipmentStatus(
 
     // Record status change in history
     await supabase.from('shipment_status_history').insert({
+      org_id: organizationId,
       shipment_id: shipmentId,
       status,
       changed_by: user.id,
@@ -189,18 +189,15 @@ export async function updateShipmentPaymentStatus(
   shipmentId: string,
   paymentStatus: PaymentStatus
 ) {
-  try {
-    const supabase = await createServerClient()
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      throw new Error('Not authenticated')
-    }
+  try {
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('shipments')
       .update({ payment_status: paymentStatus, updated_at: new Date().toISOString() })
       .eq('id', shipmentId)
+      .eq('org_id', organizationId)
       .select()
       .single()
 
@@ -220,13 +217,15 @@ export async function updateShipmentPaymentStatus(
  * Validates: Requirements 12.1
  */
 export async function searchShipments(query: string) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     if (!query || query.trim() === '') {
       const { data, error } = await supabase
         .from('shipments')
         .select('*, client:clients(*), receiver:receivers(*), trip:trips(*)')
+        .eq('org_id', organizationId)
         .order('created_at', { ascending: false })
         .limit(50)
 
@@ -237,6 +236,7 @@ export async function searchShipments(query: string) {
     const { data, error } = await supabase
       .from('shipments')
       .select('*, client:clients(*), receiver:receivers(*), trip:trips(*)')
+      .eq('org_id', organizationId)
       .ilike('tracking_number', `%${query}%`)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -256,12 +256,14 @@ export async function searchShipments(query: string) {
  * Validates: Requirements 4.8, 20.1, 20.2, 20.3, 20.5
  */
 export async function getShipmentTimeline(shipmentId: string) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('shipment_status_history')
       .select('*, profile:profiles(full_name, email)')
+      .eq('org_id', organizationId)
       .eq('shipment_id', shipmentId)
       .order('created_at', { ascending: true })
 
@@ -279,12 +281,14 @@ export async function getShipmentTimeline(shipmentId: string) {
  * Get all shipments with related data
  */
 export async function getShipments() {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('shipments')
       .select('*, client:clients(*), receiver:receivers(*), trip:trips(*)')
+      .eq('org_id', organizationId)
       .order('created_at', { ascending: false })
 
     if (error) return { error: error.message }
@@ -301,13 +305,15 @@ export async function getShipments() {
  * Get a single shipment by ID with all related data
  */
 export async function getShipment(shipmentId: string) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('shipments')
       .select('*, client:clients(*), receiver:receivers(*), trip:trips(*), delivery_proof:delivery_proofs(*)')
       .eq('id', shipmentId)
+      .eq('org_id', organizationId)
       .single()
 
     if (error) return { error: error.message }

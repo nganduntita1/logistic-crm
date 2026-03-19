@@ -1,17 +1,17 @@
 'use server'
 
-import { createServerClient } from '@/lib/supabase/server'
+import { requireOrganizationContext } from '@/lib/organizations'
 import { clientSchema } from '@/lib/validations/client'
 import { revalidatePath } from 'next/cache'
-import type { Client } from '@/lib/types/database'
 
 /**
  * Create a new client
  * Validates: Requirements 3.1, 3.5, 12.2
  */
 export async function createClient(formData: FormData) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     // Validate input
     const validated = clientSchema.parse({
@@ -28,7 +28,7 @@ export async function createClient(formData: FormData) {
     // Insert client
     const { data, error } = await supabase
       .from('clients')
-      .insert(validated)
+      .insert({ ...validated, org_id: organizationId })
       .select()
       .single()
 
@@ -51,8 +51,9 @@ export async function createClient(formData: FormData) {
  * Validates: Requirements 3.2, 3.5
  */
 export async function updateClient(clientId: string, formData: FormData) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     // Validate input
     const validated = clientSchema.parse({
@@ -71,6 +72,7 @@ export async function updateClient(clientId: string, formData: FormData) {
       .from('clients')
       .update({ ...validated, updated_at: new Date().toISOString() })
       .eq('id', clientId)
+      .eq('org_id', organizationId)
       .select()
       .single()
 
@@ -94,14 +96,16 @@ export async function updateClient(clientId: string, formData: FormData) {
  * Validates: Requirements 3.6
  */
 export async function deleteClient(clientId: string) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     // Check if client has associated shipments
     const { data: shipments, error: checkError } = await supabase
       .from('shipments')
       .select('id')
       .eq('client_id', clientId)
+      .eq('org_id', organizationId)
       .limit(1)
 
     if (checkError) {
@@ -117,6 +121,7 @@ export async function deleteClient(clientId: string) {
       .from('clients')
       .delete()
       .eq('id', clientId)
+      .eq('org_id', organizationId)
 
     if (error) {
       return { error: error.message }
@@ -137,14 +142,16 @@ export async function deleteClient(clientId: string) {
  * Validates: Requirements 3.3, 12.2, 12.4
  */
 export async function searchClients(query: string) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     if (!query || query.trim() === '') {
       // Return all clients if no query
       const { data, error } = await supabase
         .from('clients')
         .select('*')
+        .eq('org_id', organizationId)
         .order('created_at', { ascending: false })
         .limit(50)
 
@@ -159,6 +166,7 @@ export async function searchClients(query: string) {
     const { data, error } = await supabase
       .from('clients')
       .select('*')
+      .eq('org_id', organizationId)
       .or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -180,13 +188,15 @@ export async function searchClients(query: string) {
  * Get a single client by ID
  */
 export async function getClient(clientId: string) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('clients')
       .select('*')
       .eq('id', clientId)
+      .eq('org_id', organizationId)
       .single()
 
     if (error) {
@@ -206,12 +216,14 @@ export async function getClient(clientId: string) {
  * Get all clients
  */
 export async function getClients() {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('clients')
       .select('*')
+      .eq('org_id', organizationId)
       .order('created_at', { ascending: false })
 
     if (error) {

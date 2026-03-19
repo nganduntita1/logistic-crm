@@ -7,6 +7,8 @@
 
 export type UserRole = 'admin' | 'operator' | 'driver'
 
+export type OrgMemberRole = 'owner' | 'admin' | 'operator' | 'driver'
+
 export type ShipmentStatus = 'pending' | 'in_transit' | 'delivered' | 'cancelled'
 
 export type PaymentStatus = 'unpaid' | 'partial' | 'paid'
@@ -30,8 +32,27 @@ export interface Profile {
   updated_at: string
 }
 
+export interface Organization {
+  id: string
+  name: string
+  slug: string
+  owner_id?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface OrgMember {
+  id: string
+  org_id: string
+  user_id: string
+  role: OrgMemberRole
+  created_at: string
+  organization?: Organization | null
+}
+
 export interface Client {
   id: string
+  org_id: string
   name: string
   phone: string
   whatsapp?: string | null
@@ -46,6 +67,7 @@ export interface Client {
 
 export interface Receiver {
   id: string
+  org_id: string
   name: string
   phone: string
   address: string
@@ -57,6 +79,7 @@ export interface Receiver {
 
 export interface Vehicle {
   id: string
+  org_id: string
   plate_number: string
   type: string
   capacity: number
@@ -68,6 +91,7 @@ export interface Vehicle {
 
 export interface Driver {
   id: string
+  org_id: string
   user_id: string
   license_number: string
   passport_number: string
@@ -82,6 +106,7 @@ export interface Driver {
 
 export interface Trip {
   id: string
+  org_id: string
   route: string
   departure_date: string
   expected_arrival: string
@@ -98,6 +123,7 @@ export interface Trip {
 
 export interface Shipment {
   id: string
+  org_id: string
   tracking_number: string
   client_id: string
   receiver_id: string
@@ -120,6 +146,7 @@ export interface Shipment {
 
 export interface DriverLocation {
   id: string
+  org_id: string
   driver_id: string
   latitude: number
   longitude: number
@@ -129,6 +156,7 @@ export interface DriverLocation {
 
 export interface DeliveryProof {
   id: string
+  org_id: string
   shipment_id: string
   receiver_name: string
   photo_url: string
@@ -138,6 +166,7 @@ export interface DeliveryProof {
 
 export interface ShipmentStatusHistory {
   id: string
+  org_id: string
   shipment_id: string
   status: ShipmentStatus
   changed_by: string
@@ -158,6 +187,16 @@ export interface Database {
         Row: Profile
         Insert: Omit<Profile, 'created_at' | 'updated_at'>
         Update: Partial<Omit<Profile, 'id' | 'created_at'>>
+      }
+      organizations: {
+        Row: Organization
+        Insert: Omit<Organization, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Organization, 'id' | 'created_at'>>
+      }
+      org_members: {
+        Row: OrgMember
+        Insert: Omit<OrgMember, 'id' | 'created_at'>
+        Update: Partial<Omit<OrgMember, 'id' | 'created_at'>>
       }
       clients: {
         Row: Client

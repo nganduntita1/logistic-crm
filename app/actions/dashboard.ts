@@ -1,6 +1,6 @@
 'use server'
 
-import { createServerClient } from '@/lib/supabase/server'
+import { requireOrganizationContext } from '@/lib/organizations'
 
 export interface DashboardMetrics {
   shipmentsInTransit: number
@@ -50,32 +50,37 @@ export interface OngoingTrip {
  * Validates: Requirements 2.1, 2.2, 2.3, 2.4, 17.3
  */
 export async function getDashboardMetrics(): Promise<{ data?: DashboardMetrics; error?: string }> {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const [inTransitResult, deliveredResult, activeTripsResult, revenueResult] = await Promise.all([
       // Count shipments currently in transit (Requirement 2.1)
       supabase
         .from('shipments')
         .select('id', { count: 'exact', head: true })
+        .eq('org_id', organizationId)
         .eq('status', 'in_transit'),
 
       // Count delivered shipments (Requirement 2.2)
       supabase
         .from('shipments')
         .select('id', { count: 'exact', head: true })
+        .eq('org_id', organizationId)
         .eq('status', 'delivered'),
 
       // Count active trips (planned + in_progress) (Requirement 2.3)
       supabase
         .from('trips')
         .select('id', { count: 'exact', head: true })
+        .eq('org_id', organizationId)
         .in('status', ['planned', 'in_progress']),
 
       // Sum revenue from paid shipments (Requirements 2.4, 17.3)
       supabase
         .from('shipments')
         .select('price')
+        .eq('org_id', organizationId)
         .eq('payment_status', 'paid'),
     ])
 
@@ -107,8 +112,9 @@ export async function getDashboardMetrics(): Promise<{ data?: DashboardMetrics; 
  * Fetch shipments grouped by status for pie chart
  */
 export async function getShipmentsByStatus(): Promise<{ data?: ShipmentStatusData; error?: string }> {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const statuses = ['pending', 'in_transit', 'delivered', 'cancelled']
     const results = await Promise.all(
@@ -116,6 +122,7 @@ export async function getShipmentsByStatus(): Promise<{ data?: ShipmentStatusDat
         supabase
           .from('shipments')
           .select('id', { count: 'exact', head: true })
+          .eq('org_id', organizationId)
           .eq('status', status)
       )
     )
@@ -138,8 +145,9 @@ export async function getShipmentsByStatus(): Promise<{ data?: ShipmentStatusDat
  * Fetch revenue data for the last 30 days
  */
 export async function getRevenueChart(): Promise<{ data?: RevenueChartData[]; error?: string }> {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
@@ -147,6 +155,7 @@ export async function getRevenueChart(): Promise<{ data?: RevenueChartData[]; er
     const { data: shipments, error } = await supabase
       .from('shipments')
       .select('price, created_at')
+      .eq('org_id', organizationId)
       .eq('payment_status', 'paid')
       .gte('created_at', thirtyDaysAgo.toISOString())
       .order('created_at', { ascending: true })
@@ -176,12 +185,14 @@ export async function getRevenueChart(): Promise<{ data?: RevenueChartData[]; er
  * Fetch top routes by shipment count
  */
 export async function getTopRoutes(): Promise<{ data?: RouteData[]; error?: string }> {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data: shipments, error } = await supabase
       .from('shipments')
       .select('trip:trip_id(route)')
+      .eq('org_id', organizationId)
 
     if (error) return { error: error.message }
 
@@ -210,12 +221,14 @@ export async function getTopRoutes(): Promise<{ data?: RouteData[]; error?: stri
  * Fetch recent shipments for activity feed
  */
 export async function getRecentShipments(limit = 5): Promise<{ data?: RecentShipment[]; error?: string }> {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data: shipments, error } = await supabase
       .from('shipments')
       .select('id, tracking_number, status, payment_status, client:client_id(name), created_at')
+      .eq('org_id', organizationId)
       .order('created_at', { ascending: false })
       .limit(limit)
 
@@ -241,12 +254,14 @@ export async function getRecentShipments(limit = 5): Promise<{ data?: RecentShip
  * Fetch ongoing (in-progress) trips for dashboard overview
  */
 export async function getOngoingTrips(limit = 6): Promise<{ data?: OngoingTrip[]; error?: string }> {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data: trips, error } = await supabase
       .from('trips')
       .select('id, route, departure_date, expected_arrival, status, driver:driver_id(profile:user_id(full_name)), vehicle:vehicle_id(plate_number)')
+      .eq('org_id', organizationId)
       .eq('status', 'in_progress')
       .order('departure_date', { ascending: true })
       .limit(limit)

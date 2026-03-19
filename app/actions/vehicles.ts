@@ -1,6 +1,6 @@
 'use server'
 
-import { createServerClient } from '@/lib/supabase/server'
+import { requireOrganizationContext } from '@/lib/organizations'
 import { vehicleSchema } from '@/lib/validations/vehicle'
 import { revalidatePath } from 'next/cache'
 
@@ -9,8 +9,9 @@ import { revalidatePath } from 'next/cache'
  * Validates: Requirements 7.1, 7.3
  */
 export async function createVehicle(formData: FormData) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const validated = vehicleSchema.parse({
       plate_number: formData.get('plate_number'),
@@ -21,7 +22,7 @@ export async function createVehicle(formData: FormData) {
 
     const { data, error } = await supabase
       .from('vehicles')
-      .insert(validated)
+      .insert({ ...validated, org_id: organizationId })
       .select()
       .single()
 
@@ -44,8 +45,9 @@ export async function createVehicle(formData: FormData) {
  * Validates: Requirements 7.5
  */
 export async function updateVehicle(vehicleId: string, formData: FormData) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const validated = vehicleSchema.parse({
       plate_number: formData.get('plate_number'),
@@ -58,6 +60,7 @@ export async function updateVehicle(vehicleId: string, formData: FormData) {
       .from('vehicles')
       .update({ ...validated, updated_at: new Date().toISOString() })
       .eq('id', vehicleId)
+      .eq('org_id', organizationId)
       .select()
       .single()
 
@@ -83,14 +86,16 @@ export async function updateVehicle(vehicleId: string, formData: FormData) {
  * Prevents deletion if the vehicle is assigned to a trip with status 'planned' or 'in_progress'.
  */
 export async function deleteVehicle(vehicleId: string) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     // Check for active trips (planned or in_progress)
     const { data: activeTrips, error: checkError } = await supabase
       .from('trips')
       .select('id')
       .eq('vehicle_id', vehicleId)
+      .eq('org_id', organizationId)
       .in('status', ['planned', 'in_progress'])
       .limit(1)
 
@@ -106,6 +111,7 @@ export async function deleteVehicle(vehicleId: string) {
       .from('vehicles')
       .delete()
       .eq('id', vehicleId)
+      .eq('org_id', organizationId)
 
     if (error) {
       return { error: error.message }
@@ -126,12 +132,14 @@ export async function deleteVehicle(vehicleId: string) {
  * Validates: Requirements 7.1
  */
 export async function getVehicles() {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('vehicles')
       .select('*')
+      .eq('org_id', organizationId)
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -151,13 +159,15 @@ export async function getVehicles() {
  * Get a single vehicle by ID
  */
 export async function getVehicle(vehicleId: string) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('vehicles')
       .select('*')
       .eq('id', vehicleId)
+      .eq('org_id', organizationId)
       .single()
 
     if (error) {

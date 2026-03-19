@@ -1,6 +1,6 @@
 'use server'
 
-import { createServerClient } from '@/lib/supabase/server'
+import { requireOrganizationContext } from '@/lib/organizations'
 import { revalidatePath } from 'next/cache'
 
 /**
@@ -15,6 +15,7 @@ export async function updateDriverLocation(
   latitude: number,
   longitude: number
 ) {
+
   try {
     if (latitude < -90 || latitude > 90) {
       return { error: 'Invalid latitude: must be between -90 and 90' }
@@ -23,11 +24,12 @@ export async function updateDriverLocation(
       return { error: 'Invalid longitude: must be between -180 and 180' }
     }
 
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('driver_locations')
       .insert({
+        org_id: organizationId,
         driver_id: driverId,
         latitude,
         longitude,
@@ -58,8 +60,9 @@ export async function updateDriverLocation(
  * supabase/migrations/002_driver_locations_function.sql
  */
 export async function getLatestDriverLocations() {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase } = await requireOrganizationContext()
 
     const { data, error } = await supabase.rpc('get_latest_driver_locations')
 

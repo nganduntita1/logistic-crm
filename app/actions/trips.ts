@@ -1,6 +1,6 @@
 'use server'
 
-import { createServerClient } from '@/lib/supabase/server'
+import { requireOrganizationContext } from '@/lib/organizations'
 import { tripSchema } from '@/lib/validations/trip'
 import { revalidatePath } from 'next/cache'
 import type { TripStatus } from '@/lib/types/database'
@@ -12,7 +12,8 @@ import type { TripStatus } from '@/lib/types/database'
  * Returns an error string if overlap found, null otherwise.
  */
 async function checkOverlap(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  supabase: Awaited<ReturnType<typeof requireOrganizationContext>>['supabase'],
+  organizationId: string,
   departure_date: string,
   expected_arrival: string,
   driver_id?: string | null,
@@ -25,6 +26,7 @@ async function checkOverlap(
     let q = supabase
       .from('trips')
       .select('id, route, departure_date, expected_arrival')
+      .eq('org_id', organizationId)
       .eq(field, value)
       .in('status', ['planned', 'in_progress'])
       .lte('departure_date', expected_arrival)
@@ -60,8 +62,9 @@ async function checkOverlap(
  * Validates: Requirements 5.1, 5.2, 5.6, 5.7, 19.1
  */
 export async function createTrip(formData: FormData) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const driverId = formData.get('driver_id') as string
     const vehicleId = formData.get('vehicle_id') as string
@@ -80,6 +83,7 @@ export async function createTrip(formData: FormData) {
     // Check for overlapping assignments
     const overlapError = await checkOverlap(
       supabase,
+      organizationId,
       validated.departure_date,
       validated.expected_arrival,
       resolvedDriverId,
@@ -92,6 +96,7 @@ export async function createTrip(formData: FormData) {
     const { data, error } = await supabase
       .from('trips')
       .insert({
+        org_id: organizationId,
         route: validated.route,
         departure_date: validated.departure_date,
         expected_arrival: validated.expected_arrival,
@@ -121,8 +126,9 @@ export async function createTrip(formData: FormData) {
  * Validates: Requirements 5.1, 5.2, 5.6, 5.7
  */
 export async function updateTrip(tripId: string, formData: FormData) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const driverId = formData.get('driver_id') as string
     const vehicleId = formData.get('vehicle_id') as string
@@ -141,6 +147,7 @@ export async function updateTrip(tripId: string, formData: FormData) {
     // Check for overlapping assignments (exclude current trip)
     const overlapError = await checkOverlap(
       supabase,
+      organizationId,
       validated.departure_date,
       validated.expected_arrival,
       resolvedDriverId,
@@ -162,6 +169,7 @@ export async function updateTrip(tripId: string, formData: FormData) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', tripId)
+      .eq('org_id', organizationId)
       .select('*, driver:drivers(*, profile:profiles(*)), vehicle:vehicles(*)')
       .single()
 
@@ -188,18 +196,15 @@ export async function updateTrip(tripId: string, formData: FormData) {
  * When status → completed/cancelled: no automatic shipment cascade
  */
 export async function updateTripStatus(tripId: string, status: TripStatus, notes?: string) {
-  try {
-    const supabase = await createServerClient()
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return { error: 'Not authenticated' }
-    }
+  try {
+    const { supabase, organizationId, user } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('trips')
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', tripId)
+      .eq('org_id', organizationId)
       .select()
       .single()
 
@@ -212,6 +217,7 @@ export async function updateTripStatus(tripId: string, status: TripStatus, notes
       const { data: pendingShipments } = await supabase
         .from('shipments')
         .select('id')
+        .eq('org_id', organizationId)
         .eq('trip_id', tripId)
         .eq('status', 'pending')
 
@@ -221,10 +227,12 @@ export async function updateTripStatus(tripId: string, status: TripStatus, notes
         await supabase
           .from('shipments')
           .update({ status: 'in_transit', updated_at: new Date().toISOString() })
+          .eq('org_id', organizationId)
           .in('id', shipmentIds)
 
         // Record status change in history for each shipment
         const historyRecords = shipmentIds.map((shipmentId) => ({
+          org_id: organizationId,
           shipment_id: shipmentId,
           status: 'in_transit' as const,
           changed_by: user.id,
@@ -252,12 +260,14 @@ export async function updateTripStatus(tripId: string, status: TripStatus, notes
  * Validates: Requirements 5.3, 5.5
  */
 export async function assignShipmentsToTrip(tripId: string, shipmentIds: string[]) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { error } = await supabase
       .from('shipments')
       .update({ trip_id: tripId, updated_at: new Date().toISOString() })
+      .eq('org_id', organizationId)
       .in('id', shipmentIds)
 
     if (error) {
@@ -280,13 +290,15 @@ export async function assignShipmentsToTrip(tripId: string, shipmentIds: string[
  * Remove a shipment from a trip
  */
 export async function removeShipmentFromTrip(shipmentId: string) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { error } = await supabase
       .from('shipments')
       .update({ trip_id: null, updated_at: new Date().toISOString() })
       .eq('id', shipmentId)
+      .eq('org_id', organizationId)
 
     if (error) {
       return { error: error.message }
@@ -307,12 +319,14 @@ export async function removeShipmentFromTrip(shipmentId: string) {
  * Get all trips with driver and vehicle data
  */
 export async function getTrips() {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('trips')
       .select('*, driver:drivers(*, profile:profiles(*)), vehicle:vehicles(*)')
+      .eq('org_id', organizationId)
       .order('departure_date', { ascending: false })
 
     if (error) {
@@ -332,13 +346,15 @@ export async function getTrips() {
  * Get a single trip with full related data including shipments
  */
 export async function getTrip(tripId: string) {
+
   try {
-    const supabase = await createServerClient()
+    const { supabase, organizationId } = await requireOrganizationContext()
 
     const { data, error } = await supabase
       .from('trips')
       .select('*, driver:drivers(*, profile:profiles(*)), vehicle:vehicles(*)')
       .eq('id', tripId)
+      .eq('org_id', organizationId)
       .single()
 
     if (error) {
@@ -349,6 +365,7 @@ export async function getTrip(tripId: string) {
     const { data: shipments } = await supabase
       .from('shipments')
       .select('*, client:clients(*), receiver:receivers(*)')
+      .eq('org_id', organizationId)
       .eq('trip_id', tripId)
       .order('created_at', { ascending: true })
 

@@ -1,6 +1,6 @@
 'use server'
 
-import { createServerClient } from '@/lib/supabase/server'
+import { requireOrganizationContext } from '@/lib/organizations'
 import { revalidatePath } from 'next/cache'
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
@@ -30,13 +30,9 @@ async function compressIfNeeded(input: Uint8Array): Promise<Uint8Array> {
  * Validates: Requirements 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 16.4, 16.5
  */
 export async function uploadDeliveryPhoto(formData: FormData) {
-  try {
-    const supabase = await createServerClient()
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) return { error: 'Not authenticated' }
+  try {
+    const { supabase, organizationId, user } = await requireOrganizationContext()
 
     const file = formData.get('photo') as File | null
     const shipmentId = formData.get('shipment_id') as string
@@ -64,7 +60,7 @@ export async function uploadDeliveryPhoto(formData: FormData) {
 
     // Generate unique filename organized by shipment (Requirement 16.2, 16.6)
     const ext = file.type === 'image/png' ? 'png' : file.type === 'image/webp' ? 'webp' : 'jpg'
-    const filename = `${shipmentId}/${Date.now()}-delivery.${ext}`
+    const filename = `${organizationId}/${shipmentId}/${Date.now()}-delivery.${ext}`
 
     // Upload with retry logic (Requirement 16.4)
     let uploadError: string | null = null
@@ -100,6 +96,7 @@ export async function uploadDeliveryPhoto(formData: FormData) {
     const { data: proof, error: proofError } = await supabase
       .from('delivery_proofs')
       .insert({
+        org_id: organizationId,
         shipment_id: shipmentId,
         receiver_name: receiverName.trim(),
         photo_url: photoUrl,
@@ -117,6 +114,7 @@ export async function uploadDeliveryPhoto(formData: FormData) {
       .from('shipments')
       .update({ status: 'delivered', updated_at: new Date().toISOString() })
       .eq('id', shipmentId)
+      .eq('org_id', organizationId)
 
     if (statusError) {
       return { error: statusError.message }
@@ -124,6 +122,7 @@ export async function uploadDeliveryPhoto(formData: FormData) {
 
     // Record status change in history
     await supabase.from('shipment_status_history').insert({
+      org_id: organizationId,
       shipment_id: shipmentId,
       status: 'delivered',
       changed_by: user.id,
