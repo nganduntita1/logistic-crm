@@ -194,7 +194,7 @@ export async function updateShipmentPaymentStatus(
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
-      return { error: 'Not authenticated' }
+      throw new Error('Not authenticated')
     }
 
     const { data, error } = await supabase
@@ -205,17 +205,13 @@ export async function updateShipmentPaymentStatus(
       .single()
 
     if (error) {
-      return { error: error.message }
+      throw new Error(error.message)
     }
 
     revalidatePath('/shipments')
     revalidatePath(`/shipments/${shipmentId}`)
-    return { data }
   } catch (error) {
-    if (error instanceof Error) {
-      return { error: error.message }
-    }
-    return { error: 'Failed to update shipment payment status' }
+    throw error
   }
 }
 
