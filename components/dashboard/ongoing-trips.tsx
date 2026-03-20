@@ -8,12 +8,20 @@ import { LoadingSpinner } from '@/components/shared/loading-spinner'
 import { getOngoingTrips, type OngoingTrip } from '@/app/actions/dashboard'
 import { Calendar, Truck, User } from 'lucide-react'
 
-export function OngoingTrips() {
-  const [trips, setTrips] = useState<OngoingTrip[] | null>(null)
+interface OngoingTripsProps {
+  initialTrips?: OngoingTrip[]
+}
+
+export function OngoingTrips({ initialTrips = [] }: OngoingTripsProps) {
+  const [trips, setTrips] = useState<OngoingTrip[] | null>(initialTrips.length > 0 ? initialTrips : null)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(initialTrips.length === 0)
 
   useEffect(() => {
+    if (initialTrips.length > 0) {
+      return
+    }
+
     async function fetch() {
       try {
         setLoading(true)
@@ -32,7 +40,7 @@ export function OngoingTrips() {
     }
 
     fetch()
-  }, [])
+  }, [initialTrips])
 
   if (loading) return <LoadingSpinner />
   if (error) return <p className="text-sm text-destructive">{error}</p>

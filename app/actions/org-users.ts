@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import {
   deactivateOrganizationEmployee,
   listOrganizationEmployees,
+  listPaginatedOrganizationEmployees,
   provisionOrganizationUser,
   resendOrganizationEmployeeInvite,
   type ManagedOrgUserRole,
@@ -29,6 +30,13 @@ export async function createOrganizationUser(formData: FormData) {
 
 export async function getOrganizationEmployees() {
   return await listOrganizationEmployees()
+}
+
+export async function getPaginatedOrganizationEmployees(params?: {
+  page?: number
+  pageSize?: number
+}) {
+  return await listPaginatedOrganizationEmployees(params)
 }
 
 export async function changeOrganizationEmployeeRole(formData: FormData) {

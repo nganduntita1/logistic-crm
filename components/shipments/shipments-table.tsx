@@ -1,77 +1,83 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { DataTable, ColumnDef, FilterOption } from '@/components/shared/data-table'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { DataTable, ColumnDef } from '@/components/shared/data-table'
 import { SearchInput } from '@/components/shared/search-input'
 import { StatusBadge, PaymentStatusBadge } from '@/components/shared/status-badge'
 import { HighlightText } from '@/components/shared/highlight-text'
-import { searchShipments } from '@/app/actions/shipments'
-import type { Shipment, ShipmentStatus, PaymentStatus } from '@/lib/types/database'
+import { PaginationControls } from '@/components/shared/pagination-controls'
+import type { PaginationMeta } from '@/lib/pagination'
+import type { ShipmentStatus, PaymentStatus } from '@/lib/types/database'
 
-interface ShipmentsTableProps {
-  shipments: Shipment[]
+interface ShipmentLookup {
+  id: string
+  name: string
 }
 
-/**
- * Shipments Table Component
- * Validates: Requirements 12.1, 17.4
- *
- * Searchable by tracking number, filterable by status and payment_status.
- */
-export function ShipmentsTable({ shipments: initialShipments }: ShipmentsTableProps) {
+interface ShipmentTableRow {
+  id: string
+  tracking_number: string
+  description: string
+  status: ShipmentStatus
+  payment_status: PaymentStatus
+  price: number
+  created_at: string
+  client?: ShipmentLookup | ShipmentLookup[] | null
+}
+
+interface ShipmentsTableProps {
+  shipments: ShipmentTableRow[]
+  pagination?: PaginationMeta
+  initialQuery?: string
+  currentStatus?: string
+  currentPaymentStatus?: string
+}
+
+export function ShipmentsTable({
+  shipments,
+  pagination,
+  initialQuery = '',
+  currentStatus = '',
+  currentPaymentStatus = '',
+}: ShipmentsTableProps) {
   const router = useRouter()
-  const [shipments, setShipments] = useState<Shipment[]>(initialShipments)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [isSearching, setIsSearching] = useState(false)
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
 
-  const handleSearch = useCallback(async (query: string) => {
-    setSearchQuery(query)
-    setIsSearching(true)
-    const { data, error } = await searchShipments(query)
-    if (!error && data) {
-      setShipments(data as Shipment[])
-    }
-    setIsSearching(false)
-  }, [])
+  const updateQueryParams = (updates: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString())
 
-  const handleRowClick = (shipment: Shipment) => {
+    Object.entries(updates).forEach(([key, value]) => {
+      if (!value) {
+        params.delete(key)
+      } else {
+        params.set(key, value)
+      }
+    })
+
+    router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname)
+  }
+
+  const handleRowClick = (shipment: ShipmentTableRow) => {
     router.push(`/shipments/${shipment.id}`)
   }
 
-  const filterOptions: FilterOption[] = [
-    {
-      key: 'status',
-      label: 'All Statuses',
-      options: [
-        { value: 'pending', label: 'Pending' },
-        { value: 'in_transit', label: 'In Transit' },
-        { value: 'delivered', label: 'Delivered' },
-        { value: 'cancelled', label: 'Cancelled' },
-      ],
-    },
-    {
-      key: 'payment_status',
-      label: 'All Payments',
-      options: [
-        { value: 'unpaid', label: 'Unpaid' },
-        { value: 'partial', label: 'Partial' },
-        { value: 'paid', label: 'Paid' },
-      ],
-    },
-  ]
-
-  const columns: ColumnDef<Shipment>[] = [
+  const columns: ColumnDef<ShipmentTableRow>[] = [
     {
       key: 'tracking_number',
       header: 'Tracking #',
       sortable: true,
-      cell: (s) => <HighlightText text={s.tracking_number} highlight={searchQuery} />,
+      cell: (shipment) => <HighlightText text={shipment.tracking_number} highlight={initialQuery} />,
     },
     {
       key: 'client',
       header: 'Client',
-      cell: (s) => (s.client as any)?.name ?? '—',
+      cell: (shipment) => {
+        if (!shipment.client) return '—'
+        return Array.isArray(shipment.client)
+          ? shipment.client[0]?.name ?? '—'
+          : shipment.client.name
+      },
     },
     {
       key: 'description',
@@ -82,25 +88,25 @@ export function ShipmentsTable({ shipments: initialShipments }: ShipmentsTablePr
       key: 'status',
       header: 'Status',
       sortable: true,
-      cell: (s) => <StatusBadge status={s.status as ShipmentStatus} />,
+      cell: (shipment) => <StatusBadge status={shipment.status} />,
     },
     {
       key: 'payment_status',
       header: 'Payment',
       sortable: true,
-      cell: (s) => <PaymentStatusBadge status={s.payment_status as PaymentStatus} />,
+      cell: (shipment) => <PaymentStatusBadge status={shipment.payment_status} />,
     },
     {
       key: 'price',
       header: 'Price',
       sortable: true,
-      cell: (s) => `$${s.price.toLocaleString()}`,
+      cell: (shipment) => `$${shipment.price.toLocaleString()}`,
     },
     {
       key: 'created_at',
       header: 'Created',
       sortable: true,
-      cell: (s) => new Date(s.created_at).toLocaleDateString(),
+      cell: (shipment) => new Date(shipment.created_at).toLocaleDateString(),
     },
   ]
 
@@ -108,19 +114,48 @@ export function ShipmentsTable({ shipments: initialShipments }: ShipmentsTablePr
     <div className="space-y-4">
       <SearchInput
         placeholder="Search by tracking number..."
-        onSearch={handleSearch}
+        onSearch={(query) => updateQueryParams({ q: query.trim() || null, page: '1' })}
+        defaultValue={initialQuery}
         className="max-w-sm"
       />
-      {isSearching && (
-        <p className="text-sm text-muted-foreground">Searching...</p>
-      )}
+      <div className="flex flex-wrap gap-2">
+        <select
+          value={currentStatus}
+          onChange={(event) => updateQueryParams({ status: event.target.value || null, page: '1' })}
+          className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+        >
+          <option value="">All Statuses</option>
+          <option value="pending">Pending</option>
+          <option value="in_transit">In Transit</option>
+          <option value="delivered">Delivered</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <select
+          value={currentPaymentStatus}
+          onChange={(event) => updateQueryParams({ payment: event.target.value || null, page: '1' })}
+          className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+        >
+          <option value="">All Payments</option>
+          <option value="unpaid">Unpaid</option>
+          <option value="partial">Partial</option>
+          <option value="paid">Paid</option>
+        </select>
+      </div>
       <DataTable
         data={shipments}
         columns={columns}
-        filterOptions={filterOptions}
         onRowClick={handleRowClick}
         itemsPerPage={20}
       />
+      {pagination && (
+        <PaginationControls
+          page={pagination.page}
+          pageSize={pagination.pageSize}
+          totalItems={pagination.totalItems}
+          totalPages={pagination.totalPages}
+          onPageChange={(page) => updateQueryParams({ page: String(page) })}
+        />
+      )}
     </div>
   )
 }

@@ -6,9 +6,12 @@ import { TopRoutesChart } from '@/components/dashboard/top-routes-chart'
 import { RecentActivity } from '@/components/dashboard/recent-activity'
 import { OngoingTrips } from '@/components/dashboard/ongoing-trips'
 import { createServerClient } from '@/lib/supabase/server'
+import { getDashboardInitialData } from '@/app/actions/dashboard'
 
 export default async function DashboardPage() {
   const supabase = await createServerClient()
+
+  const { data: dashboardData } = await getDashboardInitialData()
 
   const {
     data: { user },
@@ -29,22 +32,22 @@ export default async function DashboardPage() {
       />
       <div className="p-6 space-y-6">
         {/* Key Metrics */}
-        <MetricsGrid />
+        <MetricsGrid initialMetrics={dashboardData?.metrics ?? null} />
 
         {/* Charts Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <ShipmentStatusChart />
-          <RevenueChart />
+          <ShipmentStatusChart initialData={dashboardData?.shipmentStatus ?? null} />
+          <RevenueChart initialData={dashboardData?.revenueChart ?? []} />
         </div>
 
         {/* Top Routes, Ongoing Trips and Recent Activity */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1">
-            <TopRoutesChart />
+            <TopRoutesChart initialData={dashboardData?.topRoutes ?? []} />
           </div>
           <div className="lg:col-span-2 space-y-6">
-            <OngoingTrips />
-            <RecentActivity />
+            <OngoingTrips initialTrips={dashboardData?.ongoingTrips ?? []} />
+            <RecentActivity initialShipments={dashboardData?.recentShipments ?? []} />
           </div>
         </div>
       </div>

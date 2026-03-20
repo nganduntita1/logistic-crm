@@ -3,6 +3,7 @@
 import { requireOrganizationContext } from '@/lib/organizations'
 import { clientSchema } from '@/lib/validations/client'
 import { revalidatePath } from 'next/cache'
+import { buildPaginationMeta, normalizePagination } from '@/lib/pagination'
 
 /**
  * Create a new client
@@ -231,6 +232,45 @@ export async function getClients() {
     }
 
     return { data }
+  } catch (error) {
+    if (error instanceof Error) {
+      return { error: error.message }
+    }
+    return { error: 'Failed to get clients' }
+  }
+}
+
+export async function getPaginatedClients(params?: {
+  page?: number
+  pageSize?: number
+  query?: string
+}) {
+  try {
+    const { supabase, organizationId } = await requireOrganizationContext()
+    const { page, pageSize, from, to } = normalizePagination(params ?? {})
+    const query = params?.query?.trim() ?? ''
+
+    let request = supabase
+      .from('clients')
+      .select('*', { count: 'exact' })
+      .eq('org_id', organizationId)
+
+    if (query) {
+      request = request.or(`name.ilike.%${query}%,phone.ilike.%${query}%`)
+    }
+
+    const { data, error, count } = await request
+      .order('created_at', { ascending: false })
+      .range(from, to)
+
+    if (error) {
+      return { error: error.message }
+    }
+
+    return {
+      data,
+      pagination: buildPaginationMeta(page, pageSize, count ?? 0),
+    }
   } catch (error) {
     if (error instanceof Error) {
       return { error: error.message }

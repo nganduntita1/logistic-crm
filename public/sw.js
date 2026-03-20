@@ -1,4 +1,4 @@
-const CACHE_NAME = 'logistics-crm-v2'
+const CACHE_NAME = 'logistics-crm-v3'
 const APP_SHELL = ['/', '/login', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png']
 
 self.addEventListener('install', (event) => {
@@ -31,17 +31,8 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const responseToCache = response.clone()
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache)
-          })
-          return response
-        })
-        .catch(() => caches.match(event.request).then((cached) => cached || caches.match('/')))
-    )
+    // Network-only for document navigations prevents stale HTML from referencing deleted chunks.
+    event.respondWith(fetch(event.request).catch(() => caches.match('/')))
     return
   }
 

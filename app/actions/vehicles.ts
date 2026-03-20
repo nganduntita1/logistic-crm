@@ -3,6 +3,7 @@
 import { requireOrganizationContext } from '@/lib/organizations'
 import { vehicleSchema } from '@/lib/validations/vehicle'
 import { revalidatePath } from 'next/cache'
+import { buildPaginationMeta, normalizePagination } from '@/lib/pagination'
 
 /**
  * Create a new vehicle
@@ -147,6 +148,45 @@ export async function getVehicles() {
     }
 
     return { data }
+  } catch (error) {
+    if (error instanceof Error) {
+      return { error: error.message }
+    }
+    return { error: 'Failed to get vehicles' }
+  }
+}
+
+export async function getPaginatedVehicles(params?: {
+  page?: number
+  pageSize?: number
+  query?: string
+}) {
+  try {
+    const { supabase, organizationId } = await requireOrganizationContext()
+    const { page, pageSize, from, to } = normalizePagination(params ?? {})
+    const query = params?.query?.trim() ?? ''
+
+    let request = supabase
+      .from('vehicles')
+      .select('*', { count: 'exact' })
+      .eq('org_id', organizationId)
+
+    if (query) {
+      request = request.or(`plate_number.ilike.%${query}%,type.ilike.%${query}%`)
+    }
+
+    const { data, error, count } = await request
+      .order('created_at', { ascending: false })
+      .range(from, to)
+
+    if (error) {
+      return { error: error.message }
+    }
+
+    return {
+      data,
+      pagination: buildPaginationMeta(page, pageSize, count ?? 0),
+    }
   } catch (error) {
     if (error instanceof Error) {
       return { error: error.message }

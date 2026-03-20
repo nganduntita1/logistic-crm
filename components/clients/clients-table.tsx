@@ -1,59 +1,60 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { DataTable, ColumnDef } from '@/components/shared/data-table'
 import { SearchInput } from '@/components/shared/search-input'
 import { HighlightText } from '@/components/shared/highlight-text'
-import { searchClients } from '@/app/actions/clients'
+import { PaginationControls } from '@/components/shared/pagination-controls'
+import type { PaginationMeta } from '@/lib/pagination'
 import type { Client } from '@/lib/types/database'
 
 interface ClientsTableProps {
   clients: Client[]
+  pagination?: PaginationMeta
+  initialQuery?: string
 }
 
 /**
  * Clients Table Component
  * Validates: Requirements 3.3, 12.2, 12.4
- * 
+ *
  * Displays clients in a searchable table with navigation to detail pages
  */
-export function ClientsTable({ clients: initialClients }: ClientsTableProps) {
+export function ClientsTable({ clients, pagination, initialQuery = '' }: ClientsTableProps) {
   const router = useRouter()
-  const [clients, setClients] = useState<Client[]>(initialClients)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [isSearching, setIsSearching] = useState(false)
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
 
-  // Handle search with debouncing (handled by SearchInput)
-  const handleSearch = useCallback(async (query: string) => {
-    setSearchQuery(query)
-    setIsSearching(true)
-    const { data, error } = await searchClients(query)
-    
-    if (!error && data) {
-      setClients(data)
-    }
-    setIsSearching(false)
-  }, [])
+  const updateQueryParams = (updates: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString())
 
-  // Navigate to client detail page on row click
+    Object.entries(updates).forEach(([key, value]) => {
+      if (!value) {
+        params.delete(key)
+      } else {
+        params.set(key, value)
+      }
+    })
+
+    router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname)
+  }
+
   const handleRowClick = (client: Client) => {
     router.push(`/clients/${client.id}`)
   }
 
-  // Define table columns
   const columns: ColumnDef<Client>[] = [
     {
       key: 'name',
       header: 'Name',
       sortable: true,
-      cell: (client) => <HighlightText text={client.name} highlight={searchQuery} />,
+      cell: (client) => <HighlightText text={client.name} highlight={initialQuery} />,
     },
     {
       key: 'phone',
       header: 'Phone',
       sortable: true,
-      cell: (client) => <HighlightText text={client.phone} highlight={searchQuery} />,
+      cell: (client) => <HighlightText text={client.phone} highlight={initialQuery} />,
     },
     {
       key: 'email',
@@ -83,24 +84,29 @@ export function ClientsTable({ clients: initialClients }: ClientsTableProps) {
 
   return (
     <div className="space-y-4">
-      {/* Search Input */}
       <SearchInput
         placeholder="Search by name or phone..."
-        onSearch={handleSearch}
+        onSearch={(query) => updateQueryParams({ q: query.trim() || null, page: '1' })}
+        defaultValue={initialQuery}
         className="max-w-sm"
       />
 
-      {isSearching && (
-        <p className="text-sm text-muted-foreground">Searching...</p>
-      )}
-
-      {/* Data Table */}
       <DataTable
         data={clients}
         columns={columns}
         onRowClick={handleRowClick}
         itemsPerPage={20}
       />
+
+      {pagination && (
+        <PaginationControls
+          page={pagination.page}
+          pageSize={pagination.pageSize}
+          totalItems={pagination.totalItems}
+          totalPages={pagination.totalPages}
+          onPageChange={(page) => updateQueryParams({ page: String(page) })}
+        />
+      )}
     </div>
   )
 }

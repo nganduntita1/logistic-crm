@@ -1,18 +1,28 @@
-import { Suspense } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
 import { ClientsTable } from '@/components/clients/clients-table'
-import { getClients } from '@/app/actions/clients'
+import { getPaginatedClients } from '@/app/actions/clients'
 
 /**
  * Client List Page
  * Validates: Requirements 3.3
- * 
+ *
  * Displays all clients in a searchable table with a "New Client" button
  */
-export default async function ClientsPage() {
-  const { data: clients, error } = await getClients()
+export default async function ClientsPage({
+  searchParams,
+}: {
+  searchParams?: { page?: string; q?: string }
+}) {
+  const page = searchParams?.page
+  const query = searchParams?.q ?? ''
+
+  const { data: clients, pagination, error } = await getPaginatedClients({
+    page: page ? Number(page) : 1,
+    pageSize: 20,
+    query,
+  })
 
   if (error) {
     return (
@@ -26,13 +36,10 @@ export default async function ClientsPage() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Clients</h1>
-          <p className="text-muted-foreground">
-            Manage your customer database
-          </p>
+          <p className="text-muted-foreground">Manage your customer database</p>
         </div>
         <Button asChild>
           <Link href="/clients/new">
@@ -42,10 +49,7 @@ export default async function ClientsPage() {
         </Button>
       </div>
 
-      {/* Clients Table */}
-      <Suspense fallback={<div>Loading clients...</div>}>
-        <ClientsTable clients={clients || []} />
-      </Suspense>
+      <ClientsTable clients={clients || []} pagination={pagination} initialQuery={query} />
     </div>
   )
 }

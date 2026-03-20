@@ -9,12 +9,20 @@ import { LoadingSpinner } from '@/components/shared/loading-spinner'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
-export function RevenueChart() {
-  const [data, setData] = useState<RevenueChartData[] | null>(null)
+interface RevenueChartProps {
+  initialData?: RevenueChartData[]
+}
+
+export function RevenueChart({ initialData = [] }: RevenueChartProps) {
+  const [data, setData] = useState<RevenueChartData[] | null>(initialData.length > 0 ? initialData : null)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(initialData.length === 0)
 
   useEffect(() => {
+    if (initialData.length > 0) {
+      return
+    }
+
     async function fetch() {
       try {
         setLoading(true)
@@ -31,7 +39,7 @@ export function RevenueChart() {
       }
     }
     fetch()
-  }, [])
+  }, [initialData])
 
   if (loading) return <LoadingSpinner />
   if (error) return <p className="text-sm text-destructive">{error}</p>

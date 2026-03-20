@@ -9,12 +9,20 @@ import { LoadingSpinner } from '@/components/shared/loading-spinner'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
-export function ShipmentStatusChart() {
-  const [data, setData] = useState<ShipmentStatusData | null>(null)
+interface ShipmentStatusChartProps {
+  initialData?: ShipmentStatusData | null
+}
+
+export function ShipmentStatusChart({ initialData = null }: ShipmentStatusChartProps) {
+  const [data, setData] = useState<ShipmentStatusData | null>(initialData)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!initialData)
 
   useEffect(() => {
+    if (initialData) {
+      return
+    }
+
     async function fetch() {
       try {
         setLoading(true)
@@ -31,7 +39,7 @@ export function ShipmentStatusChart() {
       }
     }
     fetch()
-  }, [])
+  }, [initialData])
 
   if (loading) return <LoadingSpinner />
   if (error) return <p className="text-sm text-destructive">{error}</p>

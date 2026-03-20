@@ -2,6 +2,7 @@ import 'server-only'
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireOrganizationContext } from '@/lib/organizations'
+import { buildPaginationMeta, normalizePagination } from '@/lib/pagination'
 import type { OrgMemberRole, UserRole } from '@/lib/types/database'
 
 export type ManagedOrgUserRole = 'operator' | 'driver' | 'admin'
@@ -202,6 +203,50 @@ export async function listOrganizationEmployees() {
     }))
 
   return { data: employees }
+}
+
+export async function listPaginatedOrganizationEmployees(params?: {
+  page?: number
+  pageSize?: number
+}) {
+  const authz = await requireOrganizationAdminContext()
+  if ('error' in authz) {
+    return { error: authz.error }
+  }
+
+  const { organizationId } = authz.context
+  const adminSupabase = createAdminClient()
+  const { page, pageSize, from, to } = normalizePagination(params ?? {})
+
+  const { data, error, count } = await adminSupabase
+    .from('org_members')
+    .select('user_id, role, created_at, profiles!inner(id, email, full_name, role, created_at)', {
+      count: 'exact',
+    })
+    .eq('org_id', organizationId)
+    .order('created_at', { ascending: false })
+    .range(from, to)
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  const employees: OrganizationEmployee[] = ((data ?? []) as OrgMembershipRow[])
+    .map((row) => ({ row, profile: getSingleProfile(row.profiles) }))
+    .filter((item) => !!item.profile)
+    .map((item) => ({
+      userId: item.row.user_id,
+      email: item.profile!.email,
+      fullName: item.profile!.full_name,
+      role: mapOrgRoleToManagedRole(item.row.role),
+      membershipRole: item.row.role,
+      createdAt: item.row.created_at,
+    }))
+
+  return {
+    data: employees,
+    pagination: buildPaginationMeta(page, pageSize, count ?? 0),
+  }
 }
 
 export async function updateOrganizationEmployeeRole(params: {

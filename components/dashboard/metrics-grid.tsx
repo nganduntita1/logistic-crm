@@ -5,7 +5,7 @@ import { Package, PackageCheck, Truck, DollarSign } from 'lucide-react'
 import { MetricCard } from './metric-card'
 import { getDashboardMetrics, type DashboardMetrics } from '@/app/actions/dashboard'
 
-const REFRESH_INTERVAL = 5000 // 5 seconds — Requirement 2.5
+const REFRESH_INTERVAL = 30000
 
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-ZA', {
@@ -15,8 +15,12 @@ function formatCurrency(value: number): string {
   }).format(value)
 }
 
-export function MetricsGrid() {
-  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
+interface MetricsGridProps {
+  initialMetrics?: DashboardMetrics | null
+}
+
+export function MetricsGrid({ initialMetrics = null }: MetricsGridProps) {
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(initialMetrics)
   const [error, setError] = useState<string | null>(null)
 
   const fetchMetrics = useCallback(async () => {
@@ -30,10 +34,12 @@ export function MetricsGrid() {
   }, [])
 
   useEffect(() => {
-    fetchMetrics()
+    if (!initialMetrics) {
+      fetchMetrics()
+    }
     const interval = setInterval(fetchMetrics, REFRESH_INTERVAL)
     return () => clearInterval(interval)
-  }, [fetchMetrics])
+  }, [fetchMetrics, initialMetrics])
 
   if (error) {
     return (

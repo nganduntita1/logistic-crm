@@ -1,9 +1,8 @@
-import { Suspense } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
 import { VehiclesTable } from '@/components/vehicles/vehicles-table'
-import { getVehicles } from '@/app/actions/vehicles'
+import { getPaginatedVehicles } from '@/app/actions/vehicles'
 
 /**
  * Vehicle List Page
@@ -11,8 +10,16 @@ import { getVehicles } from '@/app/actions/vehicles'
  *
  * Displays all vehicles in a DataTable with insurance expiry warnings and a "New Vehicle" button.
  */
-export default async function VehiclesPage() {
-  const { data: vehicles, error } = await getVehicles()
+export default async function VehiclesPage({
+  searchParams,
+}: {
+  searchParams?: { page?: string; q?: string }
+}) {
+  const { data: vehicles, pagination, error } = await getPaginatedVehicles({
+    page: searchParams?.page ? Number(searchParams.page) : 1,
+    pageSize: 20,
+    query: searchParams?.q ?? '',
+  })
 
   if (error) {
     return (
@@ -26,7 +33,6 @@ export default async function VehiclesPage() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Vehicles</h1>
@@ -40,10 +46,11 @@ export default async function VehiclesPage() {
         </Button>
       </div>
 
-      {/* Vehicles Table */}
-      <Suspense fallback={<div>Loading vehicles...</div>}>
-        <VehiclesTable vehicles={vehicles || []} />
-      </Suspense>
+      <VehiclesTable
+        vehicles={vehicles || []}
+        pagination={pagination}
+        initialQuery={searchParams?.q ?? ''}
+      />
     </div>
   )
 }

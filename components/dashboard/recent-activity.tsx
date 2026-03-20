@@ -8,12 +8,20 @@ import { getRecentShipments, type RecentShipment } from '@/app/actions/dashboard
 import { LoadingSpinner } from '@/components/shared/loading-spinner'
 import type { ShipmentStatus, PaymentStatus } from '@/lib/types/database'
 
-export function RecentActivity() {
-  const [shipments, setShipments] = useState<RecentShipment[] | null>(null)
+interface RecentActivityProps {
+  initialShipments?: RecentShipment[]
+}
+
+export function RecentActivity({ initialShipments = [] }: RecentActivityProps) {
+  const [shipments, setShipments] = useState<RecentShipment[] | null>(initialShipments.length > 0 ? initialShipments : null)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(initialShipments.length === 0)
 
   useEffect(() => {
+    if (initialShipments.length > 0) {
+      return
+    }
+
     async function fetch() {
       try {
         setLoading(true)
@@ -30,7 +38,7 @@ export function RecentActivity() {
       }
     }
     fetch()
-  }, [])
+  }, [initialShipments])
 
   if (loading) return <LoadingSpinner />
   if (error) return <p className="text-sm text-destructive">{error}</p>

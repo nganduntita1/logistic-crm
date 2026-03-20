@@ -3,6 +3,10 @@
 import { requireOrganizationContext } from '@/lib/organizations'
 import { tripSchema } from '@/lib/validations/trip'
 import { revalidatePath } from 'next/cache'
+import { buildPaginationMeta, normalizePagination } from '@/lib/pagination'
+
+const TRIP_LIST_SELECT =
+  'id, org_id, route, departure_date, expected_arrival, driver_id, vehicle_id, status, created_at, updated_at, driver:drivers(id, user_id, profile:profiles(id, full_name)), vehicle:vehicles(id, plate_number, type)'
 import type { TripStatus } from '@/lib/types/database'
 
 /**
@@ -334,6 +338,45 @@ export async function getTrips() {
     }
 
     return { data }
+  } catch (error) {
+    if (error instanceof Error) {
+      return { error: error.message }
+    }
+    return { error: 'Failed to get trips' }
+  }
+}
+
+export async function getPaginatedTrips(params?: {
+  page?: number
+  pageSize?: number
+  status?: string
+}) {
+  try {
+    const { supabase, organizationId } = await requireOrganizationContext()
+    const { page, pageSize, from, to } = normalizePagination(params ?? {})
+    const status = params?.status?.trim() ?? ''
+
+    let request = supabase
+      .from('trips')
+      .select(TRIP_LIST_SELECT, { count: 'exact' })
+      .eq('org_id', organizationId)
+
+    if (status) {
+      request = request.eq('status', status)
+    }
+
+    const { data, error, count } = await request
+      .order('departure_date', { ascending: false })
+      .range(from, to)
+
+    if (error) {
+      return { error: error.message }
+    }
+
+    return {
+      data,
+      pagination: buildPaginationMeta(page, pageSize, count ?? 0),
+    }
   } catch (error) {
     if (error instanceof Error) {
       return { error: error.message }

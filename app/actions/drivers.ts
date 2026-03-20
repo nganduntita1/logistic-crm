@@ -3,6 +3,10 @@
 import { requireOrganizationContext } from '@/lib/organizations'
 import { driverSchema } from '@/lib/validations/driver'
 import { revalidatePath } from 'next/cache'
+import { buildPaginationMeta, normalizePagination } from '@/lib/pagination'
+
+const DRIVER_LIST_SELECT =
+  'id, org_id, user_id, license_number, passport_number, vehicle_id, status, created_at, updated_at, profile:profiles(id, full_name, email), vehicle:vehicles(id, plate_number, type)'
 
 /**
  * Create a new driver with uniqueness checks for license and passport numbers
@@ -169,6 +173,45 @@ export async function getDrivers() {
     }
 
     return { data }
+  } catch (error) {
+    if (error instanceof Error) {
+      return { error: error.message }
+    }
+    return { error: 'Failed to get drivers' }
+  }
+}
+
+export async function getPaginatedDrivers(params?: {
+  page?: number
+  pageSize?: number
+  query?: string
+}) {
+  try {
+    const { supabase, organizationId } = await requireOrganizationContext()
+    const { page, pageSize, from, to } = normalizePagination(params ?? {})
+    const query = params?.query?.trim() ?? ''
+
+    let request = supabase
+      .from('drivers')
+      .select(DRIVER_LIST_SELECT, { count: 'exact' })
+      .eq('org_id', organizationId)
+
+    if (query) {
+      request = request.ilike('license_number', `%${query}%`)
+    }
+
+    const { data, error, count } = await request
+      .order('created_at', { ascending: false })
+      .range(from, to)
+
+    if (error) {
+      return { error: error.message }
+    }
+
+    return {
+      data,
+      pagination: buildPaginationMeta(page, pageSize, count ?? 0),
+    }
   } catch (error) {
     if (error instanceof Error) {
       return { error: error.message }

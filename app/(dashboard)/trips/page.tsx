@@ -1,9 +1,8 @@
-import { Suspense } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
 import { TripsTable } from '@/components/trips/trips-table'
-import { getTrips } from '@/app/actions/trips'
+import { getPaginatedTrips } from '@/app/actions/trips'
 
 /**
  * Trip List Page
@@ -11,8 +10,18 @@ import { getTrips } from '@/app/actions/trips'
  *
  * Displays all trips with driver/vehicle assignments and status filter.
  */
-export default async function TripsPage() {
-  const { data: trips, error } = await getTrips()
+export default async function TripsPage({
+  searchParams,
+}: {
+  searchParams?: { page?: string; status?: string }
+}) {
+  const status = searchParams?.status ?? ''
+
+  const { data: trips, pagination, error } = await getPaginatedTrips({
+    page: searchParams?.page ? Number(searchParams.page) : 1,
+    pageSize: 20,
+    status,
+  })
 
   if (error) {
     return (
@@ -39,9 +48,7 @@ export default async function TripsPage() {
         </Button>
       </div>
 
-      <Suspense fallback={<div>Loading trips...</div>}>
-        <TripsTable trips={trips ?? []} />
-      </Suspense>
+      <TripsTable trips={trips ?? []} pagination={pagination} currentStatus={status} />
     </div>
   )
 }

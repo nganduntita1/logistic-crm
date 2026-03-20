@@ -1,16 +1,23 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { PaginationControls } from '@/components/shared/pagination-controls'
+import type { PaginationMeta } from '@/lib/pagination'
 import type { OrganizationEmployee } from '@/lib/auth/org-user-management'
 
 type EmployeeRole = 'operator' | 'driver' | 'admin'
 
 interface EmployeesTableProps {
   employees: OrganizationEmployee[]
+  pagination?: PaginationMeta
 }
 
-export function EmployeesTable({ employees }: EmployeesTableProps) {
+export function EmployeesTable({ employees, pagination }: EmployeesTableProps) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [busyUserId, setBusyUserId] = useState<string | null>(null)
   const [message, setMessage] = useState<string>('')
   const [error, setError] = useState<string>('')
@@ -25,6 +32,12 @@ export function EmployeesTable({ employees }: EmployeesTableProps) {
     () => [...employees].sort((a, b) => a.fullName.localeCompare(b.fullName)),
     [employees]
   )
+
+  const updatePage = (page: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('page', String(page))
+    router.replace(`${pathname}?${params.toString()}`)
+  }
 
   const post = async (url: string, payload: Record<string, string>, successMessage: string) => {
     setError('')
@@ -172,6 +185,16 @@ export function EmployeesTable({ employees }: EmployeesTableProps) {
           </tbody>
         </table>
       </div>
+
+      {pagination && (
+        <PaginationControls
+          page={pagination.page}
+          pageSize={pagination.pageSize}
+          totalItems={pagination.totalItems}
+          totalPages={pagination.totalPages}
+          onPageChange={updatePage}
+        />
+      )}
     </div>
   )
 }

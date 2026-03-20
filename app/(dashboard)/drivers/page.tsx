@@ -1,10 +1,9 @@
-import { Suspense } from 'react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
 import { DriversTable } from '@/components/drivers/drivers-table'
-import { getDrivers } from '@/app/actions/drivers'
+import { getPaginatedDrivers } from '@/app/actions/drivers'
 import { createServerClient } from '@/lib/supabase/server'
 
 /**
@@ -13,9 +12,15 @@ import { createServerClient } from '@/lib/supabase/server'
  *
  * Displays all drivers in a DataTable with assigned vehicle info.
  */
-export default async function DriversPage() {
+export default async function DriversPage({
+  searchParams,
+}: {
+  searchParams?: { page?: string; q?: string }
+}) {
   const supabase = await createServerClient()
-  const { data: { session } } = await supabase.auth.getSession()
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
 
   if (!session) {
     redirect('/login')
@@ -31,7 +36,11 @@ export default async function DriversPage() {
     redirect('/')
   }
 
-  const { data: drivers, error } = await getDrivers()
+  const { data: drivers, pagination, error } = await getPaginatedDrivers({
+    page: searchParams?.page ? Number(searchParams.page) : 1,
+    pageSize: 20,
+    query: searchParams?.q ?? '',
+  })
 
   if (error) {
     return (
@@ -45,7 +54,6 @@ export default async function DriversPage() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Drivers</h1>
@@ -59,10 +67,11 @@ export default async function DriversPage() {
         </Button>
       </div>
 
-      {/* Drivers Table */}
-      <Suspense fallback={<div>Loading drivers...</div>}>
-        <DriversTable drivers={drivers ?? []} />
-      </Suspense>
+      <DriversTable
+        drivers={drivers ?? []}
+        pagination={pagination}
+        initialQuery={searchParams?.q ?? ''}
+      />
     </div>
   )
 }

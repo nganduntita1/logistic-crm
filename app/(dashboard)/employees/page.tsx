@@ -1,10 +1,14 @@
 import { redirect } from 'next/navigation'
 import { createServerClient } from '@/lib/supabase/server'
-import { getOrganizationEmployees } from '@/app/actions/org-users'
+import { getPaginatedOrganizationEmployees } from '@/app/actions/org-users'
 import { AddEmployeeDialog } from '@/components/layout/add-employee-dialog'
 import { EmployeesTable } from '@/components/employees/employees-table'
 
-export default async function EmployeesPage() {
+export default async function EmployeesPage({
+  searchParams,
+}: {
+  searchParams?: { page?: string }
+}) {
   const supabase = await createServerClient()
   const {
     data: { session },
@@ -24,7 +28,10 @@ export default async function EmployeesPage() {
     redirect('/')
   }
 
-  const { data: employees, error } = await getOrganizationEmployees()
+  const { data: employees, pagination, error } = await getPaginatedOrganizationEmployees({
+    page: searchParams?.page ? Number(searchParams.page) : 1,
+    pageSize: 20,
+  })
 
   if (error) {
     return (
@@ -46,7 +53,7 @@ export default async function EmployeesPage() {
         <AddEmployeeDialog triggerClassName="justify-start" />
       </div>
 
-      <EmployeesTable employees={employees ?? []} />
+      <EmployeesTable employees={employees ?? []} pagination={pagination} />
     </div>
   )
 }

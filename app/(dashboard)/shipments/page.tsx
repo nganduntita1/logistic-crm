@@ -1,19 +1,25 @@
-import { Suspense } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Plus } from 'lucide-react'
 import { ShipmentsTable } from '@/components/shipments/shipments-table'
-import { getShipments } from '@/app/actions/shipments'
+import { getPaginatedShipments } from '@/app/actions/shipments'
 
-/**
- * Shipment List Page
- * Validates: Requirements 12.1, 17.4
- *
- * Displays all shipments with search by tracking number and
- * filters for status and payment_status.
- */
-export default async function ShipmentsPage() {
-  const { data: shipments, error } = await getShipments()
+export default async function ShipmentsPage({
+  searchParams,
+}: {
+  searchParams?: { page?: string; q?: string; status?: string; payment?: string }
+}) {
+  const query = searchParams?.q ?? ''
+  const status = searchParams?.status ?? ''
+  const paymentStatus = searchParams?.payment ?? ''
+
+  const { data: shipments, pagination, error } = await getPaginatedShipments({
+    page: searchParams?.page ? Number(searchParams.page) : 1,
+    pageSize: 20,
+    query,
+    status,
+    paymentStatus,
+  })
 
   if (error) {
     return (
@@ -40,9 +46,13 @@ export default async function ShipmentsPage() {
         </Button>
       </div>
 
-      <Suspense fallback={<div>Loading shipments...</div>}>
-        <ShipmentsTable shipments={shipments ?? []} />
-      </Suspense>
+      <ShipmentsTable
+        shipments={shipments ?? []}
+        pagination={pagination}
+        initialQuery={query}
+        currentStatus={status}
+        currentPaymentStatus={paymentStatus}
+      />
     </div>
   )
 }

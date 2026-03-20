@@ -3,7 +3,11 @@
 import { requireOrganizationContext } from '@/lib/organizations'
 import { shipmentSchema } from '@/lib/validations/shipment'
 import { revalidatePath } from 'next/cache'
+import { buildPaginationMeta, normalizePagination } from '@/lib/pagination'
 import type { ShipmentStatus, PaymentStatus } from '@/lib/types/database'
+
+const SHIPMENT_LIST_SELECT =
+  'id, org_id, tracking_number, client_id, receiver_id, trip_id, description, quantity, weight, value, price, status, payment_status, created_at, updated_at, client:clients(id, name), receiver:receivers(id, name), trip:trips(id, route)'
 
 /**
  * Generate a unique tracking number
@@ -224,7 +228,7 @@ export async function searchShipments(query: string) {
     if (!query || query.trim() === '') {
       const { data, error } = await supabase
         .from('shipments')
-        .select('*, client:clients(*), receiver:receivers(*), trip:trips(*)')
+        .select(SHIPMENT_LIST_SELECT)
         .eq('org_id', organizationId)
         .order('created_at', { ascending: false })
         .limit(50)
@@ -235,7 +239,7 @@ export async function searchShipments(query: string) {
 
     const { data, error } = await supabase
       .from('shipments')
-      .select('*, client:clients(*), receiver:receivers(*), trip:trips(*)')
+      .select(SHIPMENT_LIST_SELECT)
       .eq('org_id', organizationId)
       .ilike('tracking_number', `%${query}%`)
       .order('created_at', { ascending: false })
@@ -287,12 +291,61 @@ export async function getShipments() {
 
     const { data, error } = await supabase
       .from('shipments')
-      .select('*, client:clients(*), receiver:receivers(*), trip:trips(*)')
+      .select(SHIPMENT_LIST_SELECT)
       .eq('org_id', organizationId)
       .order('created_at', { ascending: false })
 
     if (error) return { error: error.message }
     return { data }
+  } catch (error) {
+    if (error instanceof Error) {
+      return { error: error.message }
+    }
+    return { error: 'Failed to get shipments' }
+  }
+}
+
+export async function getPaginatedShipments(params?: {
+  page?: number
+  pageSize?: number
+  query?: string
+  status?: string
+  paymentStatus?: string
+}) {
+  try {
+    const { supabase, organizationId } = await requireOrganizationContext()
+    const { page, pageSize, from, to } = normalizePagination(params ?? {})
+    const query = params?.query?.trim() ?? ''
+    const status = params?.status?.trim() ?? ''
+    const paymentStatus = params?.paymentStatus?.trim() ?? ''
+
+    let request = supabase
+      .from('shipments')
+      .select(SHIPMENT_LIST_SELECT, { count: 'exact' })
+      .eq('org_id', organizationId)
+
+    if (query) {
+      request = request.ilike('tracking_number', `%${query}%`)
+    }
+
+    if (status) {
+      request = request.eq('status', status)
+    }
+
+    if (paymentStatus) {
+      request = request.eq('payment_status', paymentStatus)
+    }
+
+    const { data, error, count } = await request
+      .order('created_at', { ascending: false })
+      .range(from, to)
+
+    if (error) return { error: error.message }
+
+    return {
+      data,
+      pagination: buildPaginationMeta(page, pageSize, count ?? 0),
+    }
   } catch (error) {
     if (error instanceof Error) {
       return { error: error.message }
