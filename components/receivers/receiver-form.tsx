@@ -48,7 +48,7 @@ export function ReceiverForm({ onSuccess }: ReceiverFormProps) {
     try {
       const formData = new FormData()
       Object.entries(data).forEach(([key, value]) => {
-        formData.append(key, value)
+        formData.append(key, value ?? '')
       })
 
       const result = await createReceiver(formData)
@@ -92,9 +92,7 @@ export function ReceiverForm({ onSuccess }: ReceiverFormProps) {
 
       {/* Phone */}
       <div className="space-y-1">
-        <Label htmlFor="phone">
-          Phone <span className="text-destructive">*</span>
-        </Label>
+        <Label htmlFor="phone">Phone</Label>
         <Input id="phone" {...register('phone')} placeholder="+1 234 567 8900" />
         {errors.phone && (
           <p className="text-sm text-destructive">{errors.phone.message}</p>
@@ -103,9 +101,7 @@ export function ReceiverForm({ onSuccess }: ReceiverFormProps) {
 
       {/* Address */}
       <div className="space-y-1">
-        <Label htmlFor="address">
-          Address <span className="text-destructive">*</span>
-        </Label>
+        <Label htmlFor="address">Address</Label>
         <Input id="address" {...register('address')} placeholder="Street address" />
         {errors.address && (
           <p className="text-sm text-destructive">{errors.address.message}</p>
@@ -115,18 +111,14 @@ export function ReceiverForm({ onSuccess }: ReceiverFormProps) {
       {/* City / Country row */}
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1">
-          <Label htmlFor="city">
-            City <span className="text-destructive">*</span>
-          </Label>
+          <Label htmlFor="city">City</Label>
           <Input id="city" {...register('city')} placeholder="City" />
           {errors.city && (
             <p className="text-sm text-destructive">{errors.city.message}</p>
           )}
         </div>
         <div className="space-y-1">
-          <Label htmlFor="country">
-            Country <span className="text-destructive">*</span>
-          </Label>
+          <Label htmlFor="country">Country</Label>
           <Input id="country" {...register('country')} placeholder="Country" />
           {errors.country && (
             <p className="text-sm text-destructive">{errors.country.message}</p>

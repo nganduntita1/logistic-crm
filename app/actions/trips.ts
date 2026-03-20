@@ -6,8 +6,104 @@ import { revalidatePath } from 'next/cache'
 import { buildPaginationMeta, normalizePagination } from '@/lib/pagination'
 
 const TRIP_LIST_SELECT =
-  'id, org_id, route, departure_date, expected_arrival, driver_id, vehicle_id, status, created_at, updated_at, driver:drivers(id, user_id, profile:profiles(id, full_name)), vehicle:vehicles(id, plate_number, type)'
+  'id, org_id, route, transport_mode, air_origin, air_destination, air_eta_days, departure_date, expected_arrival, driver_id, vehicle_id, status, created_at, updated_at, driver:drivers(id, user_id, profile:profiles(id, full_name)), vehicle:vehicles(id, plate_number, type, capacity), shipments:shipments(id, weight, status)'
 import type { TripStatus } from '@/lib/types/database'
+
+type OrgSupabaseClient = Awaited<ReturnType<typeof requireOrganizationContext>>['supabase']
+
+const ACTIVE_LOAD_STATUSES = ['pending', 'in_transit'] as const
+
+function formatKg(value: number): string {
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })
+}
+
+function addDays(dateInput: string, days: number): string {
+  const date = new Date(dateInput)
+  date.setDate(date.getDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+async function getTripVehicleInfo(
+  supabase: OrgSupabaseClient,
+  organizationId: string,
+  tripId: string
+) {
+  const { data: trip, error } = await supabase
+    .from('trips')
+    .select('id, route, vehicle_id, vehicle:vehicles(id, plate_number, capacity)')
+    .eq('id', tripId)
+    .eq('org_id', organizationId)
+    .maybeSingle()
+
+  if (error || !trip) {
+    return { error: 'Trip not found.' }
+  }
+
+  const vehicle = Array.isArray(trip.vehicle) ? trip.vehicle[0] : trip.vehicle
+  if (!trip.vehicle_id || !vehicle?.capacity) {
+    return { data: null }
+  }
+
+  return {
+    data: {
+      tripId: trip.id,
+      route: trip.route,
+      vehicleId: trip.vehicle_id,
+      vehiclePlate: vehicle.plate_number,
+      vehicleCapacity: Number(vehicle.capacity),
+    },
+  }
+}
+
+async function getTripActiveLoad(
+  supabase: OrgSupabaseClient,
+  organizationId: string,
+  tripId: string,
+  excludeShipmentIds: string[] = []
+) {
+  const query = supabase
+    .from('shipments')
+    .select('id, weight')
+    .eq('org_id', organizationId)
+    .eq('trip_id', tripId)
+    .in('status', ACTIVE_LOAD_STATUSES)
+
+  const { data, error } = await query
+
+  if (error) {
+    return { error: 'Unable to calculate current trip load.' }
+  }
+
+  const excluded = new Set(excludeShipmentIds)
+  const total = (data ?? [])
+    .filter((item) => !excluded.has(item.id))
+    .reduce((sum, item) => sum + Number(item.weight), 0)
+  return { data: total }
+}
+
+async function getSelectedShipmentLoad(
+  supabase: OrgSupabaseClient,
+  organizationId: string,
+  shipmentIds: string[]
+) {
+  if (shipmentIds.length === 0) {
+    return { data: 0 }
+  }
+
+  const { data, error } = await supabase
+    .from('shipments')
+    .select('id, weight')
+    .eq('org_id', organizationId)
+    .in('status', ACTIVE_LOAD_STATUSES)
+    .in('id', shipmentIds)
+
+  if (error) {
+    return { error: 'Unable to calculate selected shipment load.' }
+  }
+
+  const total = (data ?? []).reduce((sum, item) => sum + Number(item.weight), 0)
+  return { data: total }
+}
 
 /**
  * Check for overlapping driver or vehicle assignments
@@ -72,17 +168,31 @@ export async function createTrip(formData: FormData) {
 
     const driverId = formData.get('driver_id') as string
     const vehicleId = formData.get('vehicle_id') as string
+    const transportMode = (formData.get('transport_mode') as string) || 'road'
+    const airEtaDaysRaw = Number(formData.get('air_eta_days'))
 
     const validated = tripSchema.parse({
       route: formData.get('route'),
+      transport_mode: transportMode,
+      air_origin: formData.get('air_origin'),
+      air_destination: formData.get('air_destination'),
+      air_eta_days: Number.isFinite(airEtaDaysRaw) ? airEtaDaysRaw : undefined,
       departure_date: formData.get('departure_date'),
       expected_arrival: formData.get('expected_arrival'),
       driver_id: driverId || undefined,
       vehicle_id: vehicleId || undefined,
     })
 
-    const resolvedDriverId = validated.driver_id || null
-    const resolvedVehicleId = validated.vehicle_id || null
+    const isAirTrip = validated.transport_mode === 'air'
+    const resolvedRoute = isAirTrip
+      ? `${validated.air_origin} -> ${validated.air_destination} (Air)`
+      : (validated.route ?? '')
+    const resolvedExpectedArrival = isAirTrip
+      ? addDays(validated.departure_date, validated.air_eta_days as number)
+      : validated.expected_arrival
+
+    const resolvedDriverId = isAirTrip ? null : (validated.driver_id || null)
+    const resolvedVehicleId = isAirTrip ? null : (validated.vehicle_id || null)
 
     // Check for overlapping assignments
     const overlapError = await checkOverlap(
@@ -101,9 +211,13 @@ export async function createTrip(formData: FormData) {
       .from('trips')
       .insert({
         org_id: organizationId,
-        route: validated.route,
+        route: resolvedRoute,
+        transport_mode: validated.transport_mode,
+        air_origin: isAirTrip ? validated.air_origin : null,
+        air_destination: isAirTrip ? validated.air_destination : null,
+        air_eta_days: isAirTrip ? validated.air_eta_days : null,
         departure_date: validated.departure_date,
-        expected_arrival: validated.expected_arrival,
+        expected_arrival: resolvedExpectedArrival,
         driver_id: resolvedDriverId,
         vehicle_id: resolvedVehicleId,
         status: 'planned',
@@ -136,17 +250,63 @@ export async function updateTrip(tripId: string, formData: FormData) {
 
     const driverId = formData.get('driver_id') as string
     const vehicleId = formData.get('vehicle_id') as string
+    const transportMode = (formData.get('transport_mode') as string) || 'road'
+    const airEtaDaysRaw = Number(formData.get('air_eta_days'))
 
     const validated = tripSchema.parse({
       route: formData.get('route'),
+      transport_mode: transportMode,
+      air_origin: formData.get('air_origin'),
+      air_destination: formData.get('air_destination'),
+      air_eta_days: Number.isFinite(airEtaDaysRaw) ? airEtaDaysRaw : undefined,
       departure_date: formData.get('departure_date'),
       expected_arrival: formData.get('expected_arrival'),
       driver_id: driverId || undefined,
       vehicle_id: vehicleId || undefined,
     })
 
-    const resolvedDriverId = validated.driver_id || null
-    const resolvedVehicleId = validated.vehicle_id || null
+    const isAirTrip = validated.transport_mode === 'air'
+    const resolvedRoute = isAirTrip
+      ? `${validated.air_origin} -> ${validated.air_destination} (Air)`
+      : (validated.route ?? '')
+    const resolvedExpectedArrival = isAirTrip
+      ? addDays(validated.departure_date, validated.air_eta_days as number)
+      : validated.expected_arrival
+
+    const resolvedDriverId = isAirTrip ? null : (validated.driver_id || null)
+    const resolvedVehicleId = isAirTrip ? null : (validated.vehicle_id || null)
+
+    if (resolvedVehicleId) {
+      const { data: activeLoad, error: activeLoadError } = await getTripActiveLoad(
+        supabase,
+        organizationId,
+        tripId
+      )
+
+      if (activeLoadError) {
+        return { error: activeLoadError }
+      }
+
+      const safeActiveLoad = activeLoad ?? 0
+
+      const { data: vehicleRow, error: vehicleError } = await supabase
+        .from('vehicles')
+        .select('plate_number, capacity')
+        .eq('org_id', organizationId)
+        .eq('id', resolvedVehicleId)
+        .maybeSingle()
+
+      if (vehicleError || !vehicleRow) {
+        return { error: 'Selected vehicle was not found.' }
+      }
+
+      const vehicleCapacity = Number(vehicleRow.capacity)
+      if (safeActiveLoad > vehicleCapacity) {
+        return {
+          error: `Cannot assign vehicle ${vehicleRow.plate_number}. Trip already has ${formatKg(safeActiveLoad)} kg and vehicle capacity is ${formatKg(vehicleCapacity)} kg.`,
+        }
+      }
+    }
 
     // Check for overlapping assignments (exclude current trip)
     const overlapError = await checkOverlap(
@@ -165,9 +325,13 @@ export async function updateTrip(tripId: string, formData: FormData) {
     const { data, error } = await supabase
       .from('trips')
       .update({
-        route: validated.route,
+        route: resolvedRoute,
+        transport_mode: validated.transport_mode,
+        air_origin: isAirTrip ? validated.air_origin : null,
+        air_destination: isAirTrip ? validated.air_destination : null,
+        air_eta_days: isAirTrip ? validated.air_eta_days : null,
         departure_date: validated.departure_date,
-        expected_arrival: validated.expected_arrival,
+        expected_arrival: resolvedExpectedArrival,
         driver_id: resolvedDriverId,
         vehicle_id: resolvedVehicleId,
         updated_at: new Date().toISOString(),
@@ -267,6 +431,51 @@ export async function assignShipmentsToTrip(tripId: string, shipmentIds: string[
 
   try {
     const { supabase, organizationId } = await requireOrganizationContext()
+
+    const { data: tripVehicleInfo, error: tripVehicleError } = await getTripVehicleInfo(
+      supabase,
+      organizationId,
+      tripId
+    )
+
+    if (tripVehicleError) {
+      return { error: tripVehicleError }
+    }
+
+    if (tripVehicleInfo) {
+      const { data: currentLoad, error: currentLoadError } = await getTripActiveLoad(
+        supabase,
+        organizationId,
+        tripId,
+        shipmentIds
+      )
+
+      if (currentLoadError) {
+        return { error: currentLoadError }
+      }
+
+      const safeCurrentLoad = currentLoad ?? 0
+
+      const { data: selectedLoad, error: selectedLoadError } = await getSelectedShipmentLoad(
+        supabase,
+        organizationId,
+        shipmentIds
+      )
+
+      if (selectedLoadError) {
+        return { error: selectedLoadError }
+      }
+
+      const safeSelectedLoad = selectedLoad ?? 0
+
+      const projectedLoad = safeCurrentLoad + safeSelectedLoad
+      if (projectedLoad > tripVehicleInfo.vehicleCapacity) {
+        const remaining = Math.max(tripVehicleInfo.vehicleCapacity - safeCurrentLoad, 0)
+        return {
+          error: `Vehicle ${tripVehicleInfo.vehiclePlate} has only ${formatKg(remaining)} kg remaining. Selected shipments add ${formatKg(safeSelectedLoad)} kg.`,
+        }
+      }
+    }
 
     const { error } = await supabase
       .from('shipments')

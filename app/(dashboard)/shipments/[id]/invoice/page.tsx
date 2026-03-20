@@ -33,6 +33,8 @@ export default async function ShipmentInvoicePage({ params }: ShipmentInvoicePag
   const client = shipment.client as Client | undefined
   const receiver = shipment.receiver as Receiver | undefined
   const trip = shipment.trip as Trip | undefined
+  const amountPaid = Number(shipment.amount_paid ?? 0)
+  const balance = Math.max(Number(shipment.price) - amountPaid, 0)
   const invoiceNumber = buildInvoiceNumber(shipment.tracking_number, shipment.created_at)
 
   return (
@@ -129,6 +131,14 @@ export default async function ShipmentInvoicePage({ params }: ShipmentInvoicePag
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Shipping Fee</span>
               <span>{formatCurrency(shipment.price)}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Amount Paid</span>
+              <span>{formatCurrency(amountPaid)}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Balance Due</span>
+              <span>{formatCurrency(balance)}</span>
             </div>
             <div className="flex items-center justify-between border-t pt-2 text-base font-semibold">
               <span>Total</span>

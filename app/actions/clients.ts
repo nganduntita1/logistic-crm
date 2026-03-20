@@ -5,6 +5,11 @@ import { clientSchema } from '@/lib/validations/client'
 import { revalidatePath } from 'next/cache'
 import { buildPaginationMeta, normalizePagination } from '@/lib/pagination'
 
+function toNullableString(value: string | undefined) {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
 /**
  * Create a new client
  * Validates: Requirements 3.1, 3.5, 12.2
@@ -27,9 +32,21 @@ export async function createClient(formData: FormData) {
     })
 
     // Insert client
+    const payload = {
+      org_id: organizationId,
+      name: validated.name,
+      phone: toNullableString(validated.phone),
+      whatsapp: toNullableString(validated.whatsapp),
+      email: toNullableString(validated.email),
+      address: toNullableString(validated.address),
+      city: toNullableString(validated.city),
+      country: toNullableString(validated.country),
+      notes: toNullableString(validated.notes),
+    }
+
     const { data, error } = await supabase
       .from('clients')
-      .insert({ ...validated, org_id: organizationId })
+      .insert(payload)
       .select()
       .single()
 
@@ -69,9 +86,21 @@ export async function updateClient(clientId: string, formData: FormData) {
     })
 
     // Update client
+    const payload = {
+      name: validated.name,
+      phone: toNullableString(validated.phone),
+      whatsapp: toNullableString(validated.whatsapp),
+      email: toNullableString(validated.email),
+      address: toNullableString(validated.address),
+      city: toNullableString(validated.city),
+      country: toNullableString(validated.country),
+      notes: toNullableString(validated.notes),
+      updated_at: new Date().toISOString(),
+    }
+
     const { data, error } = await supabase
       .from('clients')
-      .update({ ...validated, updated_at: new Date().toISOString() })
+      .update(payload)
       .eq('id', clientId)
       .eq('org_id', organizationId)
       .select()

@@ -2,6 +2,7 @@
 
 import { requireOrganizationContext } from '@/lib/organizations'
 import { driverSchema } from '@/lib/validations/driver'
+import { provisionOrganizationUser } from '@/lib/auth/org-user-management'
 import { revalidatePath } from 'next/cache'
 import { buildPaginationMeta, normalizePagination } from '@/lib/pagination'
 
@@ -313,5 +314,77 @@ export async function getDriverProfiles() {
       return { error: error.message }
     }
     return { error: 'Failed to get driver profiles' }
+  }
+}
+
+/**
+ * Quick-create a driver: provision user account with driver role, then create driver record.
+ * Only requires name, email, password, and license number.
+ * Passport number is auto-set as a unique placeholder for later update.
+ */
+export async function quickCreateDriver(params: {
+  fullName: string
+  email: string
+  password: string
+  licenseNumber: string
+}) {
+  try {
+    const { supabase, organizationId } = await requireOrganizationContext()
+
+    // Step 1: Create user account with driver role
+    const provisionResult = await provisionOrganizationUser({
+      email: params.email,
+      fullName: params.fullName,
+      role: 'driver',
+      password: params.password,
+    })
+
+    if ('error' in provisionResult && provisionResult.error) {
+      return { error: provisionResult.error }
+    }
+
+    if (!provisionResult.success || !provisionResult.data) {
+      return { error: 'Failed to create user account.' }
+    }
+
+    const userId = provisionResult.data.userId
+
+    // Check license_number uniqueness
+    const { data: existingLicense } = await supabase
+      .from('drivers')
+      .select('id')
+      .eq('org_id', organizationId)
+      .eq('license_number', params.licenseNumber)
+      .maybeSingle()
+
+    if (existingLicense) {
+      return { error: 'A driver with this license number already exists.' }
+    }
+
+    // Step 2: Create driver record; passport placeholder can be updated on the driver profile page
+    const passportPlaceholder = `PENDING-${userId.slice(0, 8).toUpperCase()}`
+
+    const { data, error } = await supabase
+      .from('drivers')
+      .insert({
+        org_id: organizationId,
+        user_id: userId,
+        license_number: params.licenseNumber,
+        passport_number: passportPlaceholder,
+      })
+      .select(`${DRIVER_LIST_SELECT}`)
+      .single()
+
+    if (error) {
+      return { error: error.message }
+    }
+
+    revalidatePath('/drivers')
+    return { data }
+  } catch (error) {
+    if (error instanceof Error) {
+      return { error: error.message }
+    }
+    return { error: 'Failed to create driver.' }
   }
 }

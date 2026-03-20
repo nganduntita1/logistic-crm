@@ -14,7 +14,7 @@ import type { Vehicle } from '@/lib/types/database'
 
 interface VehicleFormProps {
   vehicle?: Vehicle
-  onSuccess?: () => void
+  onSuccess?: (vehicle: Vehicle) => void
 }
 
 /**
@@ -76,8 +76,8 @@ export function VehicleForm({ vehicle, onSuccess }: VehicleFormProps) {
           : 'New vehicle has been added.',
       })
 
-      if (onSuccess) {
-        onSuccess()
+      if (onSuccess && result.data) {
+        onSuccess(result.data as Vehicle)
       } else {
         router.push('/vehicles')
       }

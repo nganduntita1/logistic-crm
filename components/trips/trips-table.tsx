@@ -14,6 +14,13 @@ interface TripDriver {
 interface TripVehicle {
   plate_number: string
   type: string
+  capacity?: number
+}
+
+interface TripShipment {
+  id: string
+  status: string
+  weight: number
 }
 
 interface TripRow {
@@ -24,6 +31,7 @@ interface TripRow {
   status: TripStatus
   driver?: TripDriver | TripDriver[] | null
   vehicle?: TripVehicle | TripVehicle[] | null
+  shipments?: TripShipment[] | TripShipment[][] | null
 }
 
 interface TripsTableProps {
@@ -90,6 +98,40 @@ export function TripsTable({ trips, pagination, currentStatus = '' }: TripsTable
       cell: (t) => {
         const vehicle = Array.isArray(t.vehicle) ? t.vehicle[0] : t.vehicle
         return vehicle ? `${vehicle.plate_number} (${vehicle.type})` : '—'
+      },
+    },
+    {
+      key: 'shipments',
+      header: 'Load',
+      cell: (t) => {
+        const vehicle = Array.isArray(t.vehicle) ? t.vehicle[0] : t.vehicle
+        const shipmentsRaw = t.shipments
+        const shipments = Array.isArray(shipmentsRaw) && Array.isArray(shipmentsRaw[0])
+          ? (shipmentsRaw[0] as TripShipment[])
+          : ((shipmentsRaw as TripShipment[] | null) ?? [])
+        const activeLoad = shipments
+          .filter((shipment) => shipment.status === 'pending' || shipment.status === 'in_transit')
+          .reduce((sum, shipment) => sum + Number(shipment.weight), 0)
+
+        if (!vehicle?.capacity) {
+          return `${activeLoad.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg / no vehicle`
+        }
+
+        const capacity = Number(vehicle.capacity)
+        const utilization = capacity > 0 ? (activeLoad / capacity) * 100 : 0
+        const isOverCapacity = activeLoad > capacity
+
+        return (
+          <span className={isOverCapacity ? 'text-destructive font-medium' : undefined}>
+            {activeLoad.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            {' / '}
+            {capacity.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            {' kg'}
+            {' ('}
+            {utilization.toFixed(1)}%
+            {')'}
+          </span>
+        )
       },
     },
     {

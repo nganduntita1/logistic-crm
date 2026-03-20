@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -12,13 +12,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { ReceiverForm } from '@/components/receivers/receiver-form'
-import type { Client, Receiver, Trip, Shipment } from '@/lib/types/database'
+import type { Client, Receiver, Shipment } from '@/lib/types/database'
+import type { ShipmentTripOption } from '@/lib/types/shipment-trip-option'
 
 interface ShipmentFormProps {
   shipment?: Shipment
   clients: Client[]
   receivers: Receiver[]
-  trips: Trip[]
+  trips: ShipmentTripOption[]
   onSuccess?: () => void
 }
 
@@ -41,6 +42,7 @@ export function ShipmentForm({ shipment, clients, receivers: initialReceivers, t
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors, isValid },
   } = useForm<ShipmentFormData>({
     resolver: zodResolver(shipmentSchema),
@@ -54,9 +56,41 @@ export function ShipmentForm({ shipment, clients, receivers: initialReceivers, t
       weight: shipment?.weight ?? ('' as unknown as number),
       value: shipment?.value ?? ('' as unknown as number),
       price: shipment?.price ?? ('' as unknown as number),
+      amount_paid: shipment?.amount_paid ?? 0,
       payment_status: shipment?.payment_status ?? 'unpaid',
     },
   })
+
+  const selectedTripId = watch('trip_id')
+  const enteredWeight = watch('weight')
+  const paymentStatus = watch('payment_status')
+  const price = watch('price')
+  const normalizedWeight = Number.isFinite(enteredWeight) ? Number(enteredWeight) : 0
+  const selectedTrip = trips.find((trip) => trip.id === selectedTripId)
+  const selectedTripProjectedLoad = selectedTrip
+    ? selectedTrip.current_load_weight + normalizedWeight
+    : 0
+  const selectedTripRemaining = selectedTrip && selectedTrip.vehicle_capacity !== null
+    ? Math.max(selectedTrip.vehicle_capacity - selectedTrip.current_load_weight, 0)
+    : null
+  const exceedsSelectedTripCapacity =
+    !!selectedTrip &&
+    selectedTrip.vehicle_capacity !== null &&
+    normalizedWeight > 0 &&
+    selectedTripProjectedLoad > selectedTrip.vehicle_capacity
+
+  useEffect(() => {
+    if (!Number.isFinite(price)) return
+
+    if (paymentStatus === 'unpaid') {
+      setValue('amount_paid', 0, { shouldValidate: true })
+      return
+    }
+
+    if (paymentStatus === 'paid') {
+      setValue('amount_paid', Number(price), { shouldValidate: true })
+    }
+  }, [paymentStatus, price, setValue])
 
   const onSubmit = async (data: ShipmentFormData) => {
     setIsSubmitting(true)
@@ -70,6 +104,7 @@ export function ShipmentForm({ shipment, clients, receivers: initialReceivers, t
       formData.append('weight', String(data.weight))
       formData.append('value', String(data.value))
       formData.append('price', String(data.price))
+      formData.append('amount_paid', String(data.amount_paid))
       formData.append('payment_status', data.payment_status)
 
       const result = isEditMode
@@ -182,9 +217,27 @@ export function ShipmentForm({ shipment, clients, receivers: initialReceivers, t
           {trips.map((t) => (
             <option key={t.id} value={t.id}>
               {t.route} — {new Date(t.departure_date).toLocaleDateString()} ({t.status})
+              {t.vehicle_capacity !== null
+                ? ` · ${t.current_load_weight.toLocaleString(undefined, { maximumFractionDigits: 2 })}/${t.vehicle_capacity.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg`
+                : ' · no vehicle'}
             </option>
           ))}
         </select>
+        {selectedTrip && selectedTrip.vehicle_capacity !== null && (
+          <p className="text-xs text-muted-foreground">
+            Vehicle {selectedTrip.vehicle_plate_number}: {selectedTripRemaining?.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg remaining before this shipment.
+          </p>
+        )}
+        {selectedTrip && selectedTrip.vehicle_capacity === null && (
+          <p className="text-xs text-muted-foreground">
+            Selected trip has no vehicle assigned yet, so capacity will be validated after vehicle assignment.
+          </p>
+        )}
+        {exceedsSelectedTripCapacity && (
+          <p className="text-sm text-destructive">
+            This shipment would exceed the selected vehicle capacity. Reduce weight or choose another trip.
+          </p>
+        )}
         {errors.trip_id && (
           <p className="text-sm text-destructive">{errors.trip_id.message}</p>
         )}
@@ -274,6 +327,7 @@ export function ShipmentForm({ shipment, clients, receivers: initialReceivers, t
       </div>
 
       {/* Payment status */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div className="space-y-1">
         <Label htmlFor="payment_status">
           Payment Status <span className="text-destructive">*</span>
@@ -292,12 +346,36 @@ export function ShipmentForm({ shipment, clients, receivers: initialReceivers, t
         )}
       </div>
 
+      <div className="space-y-1">
+        <Label htmlFor="amount_paid">
+          Amount Paid ($) <span className="text-destructive">*</span>
+        </Label>
+        <Input
+          id="amount_paid"
+          type="number"
+          min={0}
+          step={0.01}
+          readOnly={paymentStatus === 'unpaid' || paymentStatus === 'paid'}
+          {...register('amount_paid', { valueAsNumber: true })}
+          placeholder="0.00"
+        />
+        {paymentStatus === 'partial' && (
+          <p className="text-xs text-muted-foreground">
+            Enter only what the client has paid so far.
+          </p>
+        )}
+        {errors.amount_paid && (
+          <p className="text-sm text-destructive">{errors.amount_paid.message}</p>
+        )}
+      </div>
+      </div>
+
       {/* Actions */}
       <div className="flex gap-3 justify-end">
         <Button type="button" variant="outline" onClick={() => router.back()} disabled={isSubmitting}>
           Cancel
         </Button>
-        <Button type="submit" disabled={isSubmitting || !isValid}>
+        <Button type="submit" disabled={isSubmitting || !isValid || exceedsSelectedTripCapacity}>
           {isSubmitting
             ? isEditMode ? 'Saving...' : 'Creating...'
             : isEditMode ? 'Save Changes' : 'Create Shipment'}

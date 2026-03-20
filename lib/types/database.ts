@@ -108,6 +108,10 @@ export interface Trip {
   id: string
   org_id: string
   route: string
+  transport_mode: 'road' | 'air'
+  air_origin?: string | null
+  air_destination?: string | null
+  air_eta_days?: 1 | 2 | null
   departure_date: string
   expected_arrival: string
   driver_id?: string | null
@@ -133,6 +137,7 @@ export interface Shipment {
   weight: number
   value: number
   price: number
+  amount_paid: number
   status: ShipmentStatus
   payment_status: PaymentStatus
   created_at: string

@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, FileText, Pencil } from 'lucide-react'
-import { getShipment, getShipmentTimeline, updateShipmentPaymentStatus } from '@/app/actions/shipments'
+import { getShipment, getShipmentTimeline, updateShipmentPayment } from '@/app/actions/shipments'
 import { StatusBadge, PaymentStatusBadge } from '@/components/shared/status-badge'
 import { ShipmentTimeline } from '@/components/shipments/shipment-timeline'
 import type { ShipmentStatus, PaymentStatus, ShipmentStatusHistory, Client, Receiver, Trip, DeliveryProof } from '@/lib/types/database'
@@ -33,7 +33,9 @@ export default async function ShipmentDetailPage({ params }: ShipmentDetailPageP
   const receiver = shipment.receiver as Receiver | undefined
   const trip = shipment.trip as Trip | undefined
   const deliveryProof = shipment.delivery_proof as DeliveryProof | undefined
-  const markAsPaid = updateShipmentPaymentStatus.bind(null, shipment.id, 'paid')
+  const amountPaid = Number(shipment.amount_paid ?? 0)
+  const balance = Math.max(Number(shipment.price) - amountPaid, 0)
+  const markAsPaid = updateShipmentPayment.bind(null, shipment.id, 'paid', Number(shipment.price))
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -143,6 +145,16 @@ export default async function ShipmentDetailPage({ params }: ShipmentDetailPageP
               <div className="space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">Price</p>
                 <p className="text-sm">${shipment.price.toLocaleString()}</p>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Amount Paid</p>
+                <p className="text-sm">${amountPaid.toLocaleString()}</p>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Balance</p>
+                <p className="text-sm">${balance.toLocaleString()}</p>
               </div>
 
               <div className="space-y-1">

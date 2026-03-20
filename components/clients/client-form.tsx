@@ -103,9 +103,7 @@ export function ClientForm({ client, onSuccess }: ClientFormProps) {
 
       {/* Phone */}
       <div className="space-y-1">
-        <Label htmlFor="phone">
-          Phone <span className="text-destructive">*</span>
-        </Label>
+        <Label htmlFor="phone">Phone</Label>
         <Input id="phone" {...register('phone')} placeholder="+1 234 567 8900" />
         {errors.phone && (
           <p className="text-sm text-destructive">{errors.phone.message}</p>

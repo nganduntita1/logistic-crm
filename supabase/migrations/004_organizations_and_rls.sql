@@ -147,11 +147,14 @@ RETURNS TRIGGER AS $$
 DECLARE
   related_org_id UUID;
 BEGIN
-  IF TG_TABLE_NAME = 'drivers' AND NEW.vehicle_id IS NOT NULL THEN
-    SELECT org_id INTO related_org_id FROM vehicles WHERE id = NEW.vehicle_id;
-    IF related_org_id IS NULL OR related_org_id <> NEW.org_id THEN
-      RAISE EXCEPTION 'Vehicle must belong to the same organization as the driver';
+  IF TG_TABLE_NAME = 'drivers' THEN
+    IF NEW.vehicle_id IS NOT NULL THEN
+      SELECT org_id INTO related_org_id FROM vehicles WHERE id = NEW.vehicle_id;
+      IF related_org_id IS NULL OR related_org_id <> NEW.org_id THEN
+        RAISE EXCEPTION 'Vehicle must belong to the same organization as the driver';
+      END IF;
     END IF;
+
   ELSIF TG_TABLE_NAME = 'trips' THEN
     IF NEW.driver_id IS NOT NULL THEN
       SELECT org_id INTO related_org_id FROM drivers WHERE id = NEW.driver_id;

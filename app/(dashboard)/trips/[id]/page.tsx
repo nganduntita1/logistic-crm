@@ -28,6 +28,18 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
 
   const driver = trip.driver as any
   const vehicle = trip.vehicle as any
+  const shipmentRows = shipments as Shipment[]
+  const activeLoadKg = shipmentRows
+    .filter((shipment) => shipment.status === 'pending' || shipment.status === 'in_transit')
+    .reduce((sum, shipment) => sum + Number(shipment.weight), 0)
+  const totalAssignedKg = shipmentRows.reduce((sum, shipment) => sum + Number(shipment.weight), 0)
+  const vehicleCapacityKg = vehicle?.capacity ? Number(vehicle.capacity) : null
+  const remainingKg = vehicleCapacityKg !== null
+    ? Math.max(vehicleCapacityKg - activeLoadKg, 0)
+    : null
+  const utilizationPercent = vehicleCapacityKg && vehicleCapacityKg > 0
+    ? Math.min((activeLoadKg / vehicleCapacityKg) * 100, 100)
+    : null
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -80,6 +92,20 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
               </div>
 
               <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Transport Mode</p>
+                <p className="text-sm capitalize">{trip.transport_mode ?? 'road'}</p>
+              </div>
+
+              {trip.transport_mode === 'air' && (
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Air Route</p>
+                  <p className="text-sm">
+                    {trip.air_origin} → {trip.air_destination} ({trip.air_eta_days} day{trip.air_eta_days === 1 ? '' : 's'})
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">Departure</p>
                 <p className="text-sm">{new Date(trip.departure_date).toLocaleDateString()}</p>
               </div>
@@ -109,6 +135,43 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
                     </Link>
                   ) : '—'}
                 </p>
+              </div>
+
+              <div className="space-y-2 rounded-md border p-3">
+                <p className="text-sm font-medium text-muted-foreground">Weight Utilization</p>
+                {vehicleCapacityKg !== null ? (
+                  <>
+                    <div className="space-y-1 text-sm">
+                      <p>
+                        Active load: {activeLoadKg.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
+                      </p>
+                      <p>
+                        Capacity: {vehicleCapacityKg.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
+                      </p>
+                      <p>
+                        Remaining: {remainingKg?.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
+                      </p>
+                      <p>
+                        Total assigned (all statuses): {totalAssignedKg.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all"
+                          style={{ width: `${utilizationPercent ?? 0}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Utilization: {(utilizationPercent ?? 0).toFixed(1)}%
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No vehicle assigned yet. Capacity metrics will appear after assigning a vehicle.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -144,7 +207,7 @@ export default async function TripDetailPage({ params }: TripDetailPageProps) {
                       </tr>
                     </thead>
                     <tbody>
-                      {(shipments as Shipment[]).map((shipment) => {
+                      {shipmentRows.map((shipment) => {
                         const client = shipment.client as Client | undefined
                         const receiver = shipment.receiver as Receiver | undefined
                         return (

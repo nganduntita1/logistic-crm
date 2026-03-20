@@ -6,7 +6,7 @@ import { ShipmentForm } from '@/components/shipments/shipment-form'
 import { getClients } from '@/app/actions/clients'
 import { getReceivers } from '@/app/actions/receivers'
 import { createServerClient } from '@/lib/supabase/server'
-import type { Trip } from '@/lib/types/database'
+import type { ShipmentTripOption } from '@/lib/types/shipment-trip-option'
 
 /**
  * New Shipment Page
@@ -21,9 +21,26 @@ export default async function NewShipmentPage() {
   const supabase = await createServerClient()
   const { data: trips } = await supabase
     .from('trips')
-    .select('id, route, departure_date, status')
+    .select('id, route, departure_date, status, vehicle:vehicles(plate_number, capacity), shipments(weight, status)')
     .in('status', ['planned', 'in_progress'])
     .order('departure_date', { ascending: true })
+
+  const tripOptions: ShipmentTripOption[] = (trips ?? []).map((trip) => {
+    const vehicle = Array.isArray(trip.vehicle) ? trip.vehicle[0] : trip.vehicle
+    const activeLoad = (trip.shipments ?? [])
+      .filter((shipment) => shipment.status === 'pending' || shipment.status === 'in_transit')
+      .reduce((sum, shipment) => sum + Number(shipment.weight), 0)
+
+    return {
+      id: trip.id,
+      route: trip.route,
+      departure_date: trip.departure_date,
+      status: trip.status,
+      vehicle_capacity: vehicle?.capacity ? Number(vehicle.capacity) : null,
+      vehicle_plate_number: vehicle?.plate_number ?? null,
+      current_load_weight: activeLoad,
+    }
+  })
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -49,7 +66,7 @@ export default async function NewShipmentPage() {
           <ShipmentForm
             clients={clients ?? []}
             receivers={receivers ?? []}
-            trips={(trips as Trip[]) ?? []}
+            trips={tripOptions}
           />
         </CardContent>
       </Card>

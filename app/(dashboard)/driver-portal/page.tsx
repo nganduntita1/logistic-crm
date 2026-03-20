@@ -6,6 +6,12 @@ import { ShipmentDeliveryCard } from '@/components/shipments/shipment-delivery-c
 import { LocationButton } from '@/components/drivers/location-button'
 import type { Trip, Shipment } from '@/lib/types/database'
 
+type TripShipmentLoadItem = {
+  id: string
+  status: string
+  weight: number
+}
+
 /**
  * Driver Portal Page — mobile-optimized dashboard for drivers
  * Validates: Requirements 8.1, 8.2, 8.6
@@ -60,6 +66,18 @@ export default async function DriverPortalPage() {
 
   const tripIds = (trips ?? []).map((t) => t.id)
 
+  // Fetch active shipments for trip utilization (pending + in_transit).
+  let activeShipments: Array<{ id: string; trip_id: string | null; status: string; weight: number }> = []
+  if (tripIds.length > 0) {
+    const { data: active } = await supabase
+      .from('shipments')
+      .select('id, trip_id, status, weight')
+      .in('trip_id', tripIds)
+      .in('status', ['pending', 'in_transit'])
+
+    activeShipments = (active ?? []) as typeof activeShipments
+  }
+
   // Fetch in_transit shipments for those trips
   let pendingShipments: (Shipment & { receiver?: { name: string } })[] = []
   if (tripIds.length > 0) {
@@ -73,18 +91,18 @@ export default async function DriverPortalPage() {
     pendingShipments = (shipments ?? []) as typeof pendingShipments
   }
 
-  // Build a map of trip_id → shipments for count display
-  const shipmentsByTrip: Record<string, { id: string; status: string }[]> = {}
-  for (const s of pendingShipments) {
+  // Build a map of trip_id → active shipments for weight utilization and count display.
+  const shipmentsByTrip: Record<string, TripShipmentLoadItem[]> = {}
+  for (const s of activeShipments) {
     if (!s.trip_id) continue
     if (!shipmentsByTrip[s.trip_id]) shipmentsByTrip[s.trip_id] = []
-    shipmentsByTrip[s.trip_id].push({ id: s.id, status: s.status })
+    shipmentsByTrip[s.trip_id].push({ id: s.id, status: s.status, weight: Number(s.weight) })
   }
 
   const enrichedTrips = (trips ?? []).map((trip) => ({
     ...trip,
     shipments: shipmentsByTrip[trip.id] ?? [],
-  })) as (Trip & { shipments: { id: string; status: string }[] })[]
+  })) as (Trip & { shipments: TripShipmentLoadItem[] })[]
 
   return (
     <div>

@@ -4,6 +4,11 @@ import { requireOrganizationContext } from '@/lib/organizations'
 import { receiverSchema } from '@/lib/validations/receiver'
 import { revalidatePath } from 'next/cache'
 
+function toNullableString(value: string | undefined) {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
 /**
  * Create a new receiver
  * Validates: Requirements 18.1, 18.4
@@ -15,15 +20,24 @@ export async function createReceiver(formData: FormData) {
 
     const validated = receiverSchema.parse({
       name: formData.get('name'),
-      phone: formData.get('phone'),
-      address: formData.get('address'),
-      city: formData.get('city'),
-      country: formData.get('country'),
+      phone: formData.get('phone') || '',
+      address: formData.get('address') || '',
+      city: formData.get('city') || '',
+      country: formData.get('country') || '',
     })
+
+    const payload = {
+      org_id: organizationId,
+      name: validated.name,
+      phone: toNullableString(validated.phone),
+      address: toNullableString(validated.address),
+      city: toNullableString(validated.city),
+      country: toNullableString(validated.country),
+    }
 
     const { data, error } = await supabase
       .from('receivers')
-      .insert({ ...validated, org_id: organizationId })
+      .insert(payload)
       .select()
       .single()
 

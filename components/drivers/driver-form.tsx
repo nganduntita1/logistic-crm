@@ -22,6 +22,7 @@ interface DriverFormProps {
   driver?: Driver & { profile?: DriverProfile }
   profiles: DriverProfile[]
   vehicles: Vehicle[]
+  onSuccess?: (driver: Driver & { profile?: DriverProfile }) => void
 }
 
 /**
@@ -31,7 +32,7 @@ interface DriverFormProps {
  * Handles both create and edit modes with Zod validation.
  * Includes uniqueness validation for license and passport numbers.
  */
-export function DriverForm({ driver, profiles, vehicles }: DriverFormProps) {
+export function DriverForm({ driver, profiles, vehicles, onSuccess }: DriverFormProps) {
   const router = useRouter()
   const { toast } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -84,7 +85,11 @@ export function DriverForm({ driver, profiles, vehicles }: DriverFormProps) {
           : 'New driver has been added.',
       })
 
-      router.push('/drivers')
+      if (onSuccess && result.data) {
+        onSuccess(result.data as Driver & { profile?: DriverProfile })
+      } else {
+        router.push('/drivers')
+      }
     } finally {
       setIsSubmitting(false)
     }

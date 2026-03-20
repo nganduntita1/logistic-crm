@@ -7,7 +7,7 @@ import { buildPaginationMeta, normalizePagination } from '@/lib/pagination'
 import type { ShipmentStatus, PaymentStatus } from '@/lib/types/database'
 
 const SHIPMENT_LIST_SELECT =
-  'id, org_id, tracking_number, client_id, receiver_id, trip_id, description, quantity, weight, value, price, status, payment_status, created_at, updated_at, client:clients(id, name), receiver:receivers(id, name), trip:trips(id, route)'
+  'id, org_id, tracking_number, client_id, receiver_id, trip_id, description, quantity, weight, value, price, amount_paid, status, payment_status, created_at, updated_at, client:clients(id, name), receiver:receivers(id, name), trip:trips(id, route)'
 
 /**
  * Generate a unique tracking number
@@ -18,6 +18,82 @@ function generateTrackingNumber(): string {
   const datePart = date.toISOString().slice(0, 10).replace(/-/g, '')
   const randomPart = Math.random().toString(36).toUpperCase().slice(2, 7)
   return `TRK-${datePart}-${randomPart}`
+}
+
+const ACTIVE_LOAD_STATUSES: ShipmentStatus[] = ['pending', 'in_transit']
+
+type OrgSupabaseClient = Awaited<ReturnType<typeof requireOrganizationContext>>['supabase']
+
+function formatKg(value: number): string {
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })
+}
+
+function resolveAmountPaid(paymentStatus: PaymentStatus, price: number, inputAmountPaid: number): number {
+  if (paymentStatus === 'unpaid') return 0
+  if (paymentStatus === 'paid') return price
+  return inputAmountPaid
+}
+
+async function validateTripCapacityForShipment(params: {
+  supabase: OrgSupabaseClient
+  organizationId: string
+  tripId: string
+  shipmentWeight: number
+  excludeShipmentId?: string
+}): Promise<string | null> {
+  const {
+    supabase,
+    organizationId,
+    tripId,
+    shipmentWeight,
+    excludeShipmentId,
+  } = params
+
+  const { data: trip, error: tripError } = await supabase
+    .from('trips')
+    .select('id, route, vehicle_id, vehicle:vehicles(id, plate_number, capacity)')
+    .eq('id', tripId)
+    .eq('org_id', organizationId)
+    .maybeSingle()
+
+  if (tripError || !trip) {
+    return 'Selected trip was not found.'
+  }
+
+  const vehicle = Array.isArray(trip.vehicle) ? trip.vehicle[0] : trip.vehicle
+  const vehicleCapacity = vehicle?.capacity ? Number(vehicle.capacity) : 0
+
+  // Capacity applies only when a vehicle is assigned to the selected trip.
+  if (!trip.vehicle_id || !vehicleCapacity) {
+    return null
+  }
+
+  let loadQuery = supabase
+    .from('shipments')
+    .select('weight')
+    .eq('org_id', organizationId)
+    .eq('trip_id', tripId)
+    .in('status', ACTIVE_LOAD_STATUSES)
+
+  if (excludeShipmentId) {
+    loadQuery = loadQuery.neq('id', excludeShipmentId)
+  }
+
+  const { data: activeShipments, error: loadError } = await loadQuery
+
+  if (loadError) {
+    return 'Unable to validate trip vehicle capacity right now.'
+  }
+
+  const currentLoad = (activeShipments ?? []).reduce((sum, row) => sum + Number(row.weight), 0)
+  const projectedLoad = currentLoad + shipmentWeight
+
+  if (projectedLoad > vehicleCapacity) {
+    const remainingCapacity = Math.max(vehicleCapacity - currentLoad, 0)
+    return `Vehicle ${vehicle.plate_number} capacity exceeded. Remaining: ${formatKg(remainingCapacity)} kg, shipment weight: ${formatKg(shipmentWeight)} kg.`
+  }
+
+  return null
 }
 
 /**
@@ -39,8 +115,15 @@ export async function createShipment(formData: FormData) {
       weight: Number(formData.get('weight')),
       value: Number(formData.get('value')),
       price: Number(formData.get('price')),
+      amount_paid: Number(formData.get('amount_paid') ?? 0),
       payment_status: formData.get('payment_status'),
     })
+
+    const resolvedAmountPaid = resolveAmountPaid(
+      validated.payment_status,
+      validated.price,
+      validated.amount_paid
+    )
 
     // Generate unique tracking number (retry on collision)
     let tracking_number = generateTrackingNumber()
@@ -58,9 +141,23 @@ export async function createShipment(formData: FormData) {
 
     const insertData: Record<string, unknown> = {
       ...validated,
+      amount_paid: resolvedAmountPaid,
       org_id: organizationId,
       tracking_number,
       trip_id: validated.trip_id || null,
+    }
+
+    if (validated.trip_id) {
+      const capacityError = await validateTripCapacityForShipment({
+        supabase,
+        organizationId,
+        tripId: validated.trip_id,
+        shipmentWeight: validated.weight,
+      })
+
+      if (capacityError) {
+        return { error: capacityError }
+      }
     }
 
     const { data, error } = await supabase
@@ -111,13 +208,49 @@ export async function updateShipment(shipmentId: string, formData: FormData) {
       weight: Number(formData.get('weight')),
       value: Number(formData.get('value')),
       price: Number(formData.get('price')),
+      amount_paid: Number(formData.get('amount_paid') ?? 0),
       payment_status: formData.get('payment_status'),
     })
+
+    const resolvedAmountPaid = resolveAmountPaid(
+      validated.payment_status,
+      validated.price,
+      validated.amount_paid
+    )
+
+    const { data: existingShipment, error: existingShipmentError } = await supabase
+      .from('shipments')
+      .select('id, status')
+      .eq('id', shipmentId)
+      .eq('org_id', organizationId)
+      .maybeSingle()
+
+    if (existingShipmentError || !existingShipment) {
+      return { error: 'Shipment not found.' }
+    }
+
+    if (
+      validated.trip_id &&
+      ACTIVE_LOAD_STATUSES.includes(existingShipment.status as ShipmentStatus)
+    ) {
+      const capacityError = await validateTripCapacityForShipment({
+        supabase,
+        organizationId,
+        tripId: validated.trip_id,
+        shipmentWeight: validated.weight,
+        excludeShipmentId: shipmentId,
+      })
+
+      if (capacityError) {
+        return { error: capacityError }
+      }
+    }
 
     const { data, error } = await supabase
       .from('shipments')
       .update({
         ...validated,
+        amount_paid: resolvedAmountPaid,
         trip_id: validated.trip_id || null,
         updated_at: new Date().toISOString(),
       })
@@ -189,17 +322,40 @@ export async function updateShipmentStatus(
 /**
  * Update shipment payment status
  */
-export async function updateShipmentPaymentStatus(
+export async function updateShipmentPayment(
   shipmentId: string,
-  paymentStatus: PaymentStatus
+  paymentStatus: PaymentStatus,
+  amountPaid?: number
 ) {
 
   try {
     const { supabase, organizationId } = await requireOrganizationContext()
 
+    const { data: shipment, error: shipmentError } = await supabase
+      .from('shipments')
+      .select('id, price')
+      .eq('id', shipmentId)
+      .eq('org_id', organizationId)
+      .maybeSingle()
+
+    if (shipmentError || !shipment) {
+      throw new Error('Shipment not found')
+    }
+
+    const price = Number(shipment.price)
+    const resolvedAmountPaid = resolveAmountPaid(
+      paymentStatus,
+      price,
+      amountPaid ?? 0
+    )
+
     const { data, error } = await supabase
       .from('shipments')
-      .update({ payment_status: paymentStatus, updated_at: new Date().toISOString() })
+      .update({
+        payment_status: paymentStatus,
+        amount_paid: resolvedAmountPaid,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', shipmentId)
       .eq('org_id', organizationId)
       .select()
